@@ -274,9 +274,17 @@ Resources:
             python3 -c "import cv2, json, sys; json.dump({'version': cv2.__version__, 'path': cv2.__file__}, open('/opt/roadledger-opencv.json','w'))"
             cat /opt/roadledger-opencv.json
 
-            mkdir -p /opt/roadledger
-            aws s3 sync "s3://${MediaBucket}/code/" /opt/roadledger/ || true
+            # The worker runs exactly what is in the public repository, cloned
+            # at boot. Staging the same code through S3 first was the original
+            # design and is strictly worse: it adds a copy that can drift from
+            # the published one, it means a reviewer cannot launch this
+            # template and get the same machine, and it makes the provenance of
+            # what actually ran a question rather than a fact.
+            dnf install -y git || yum install -y git || true
+            rm -rf /opt/roadledger
+            git clone --depth 1 https://github.com/pradeeptrain9/roadledger.git /opt/roadledger
             cd /opt/roadledger
+            git rev-parse HEAD > /opt/roadledger-commit.txt
 
             # Deliberately NOT pip installing opencv here: the COOL environment
             # provides it, and installing the wheel would shadow the build this
