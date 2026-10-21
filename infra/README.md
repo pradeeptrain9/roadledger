@@ -1,5 +1,8 @@
 # Deploying RoadLedger
 
+Currently deployed at **<https://d3qxgjjnaz5lwp.cloudfront.net/>**
+(us-east-1, stack `roadledger`, account 427898641132).
+
 Zero standing cost is a design constraint, not an aspiration. Everything here
 follows from it.
 
@@ -140,7 +143,35 @@ version strings in the report and the benchmark output.
 With the worker terminated and no Elastic IP allocated, the standing cost is
 essentially zero.
 
-## 7. Teardown
+## 7. Two traps this template hit, so you do not
+
+**A YAML folded block (`>`) keeps a trailing newline.** EC2 restricts a
+security group description to `a-zA-Z0-9. _-:/()#,@[]+=&;{}!$*`, a newline is
+not in that set, and the whole stack fails with a message that names the
+charset but not the offending character. The description is a single quoted
+line for this reason. The same applies to any field a service charset-validates.
+
+**`DeletionPolicy: Retain` orphans resources when the *first* create fails.**
+The media bucket and the ledger table are retained deliberately, so a teardown
+cannot discard the record of every defect ever located. But a stack that fails
+on its first create rolls back and leaves those two behind, and the next deploy
+then fails early validation because the names are taken. If a first deploy
+fails, check for and remove the orphans before retrying:
+
+```bash
+aws s3 rb s3://roadledger-media-$(aws sts get-caller-identity --query Account --output text)-us-east-1
+aws dynamodb delete-table --table-name roadledger-ledger
+```
+
+Check they are empty first. On a *failed first deploy* they always are.
+
+**The snapshot generator needs the project's own interpreter**, not the system
+`python3`, or it cannot import cv2 and the deployed page silently has nothing
+to fall back to. `aws_deploy.sh` now prefers `.venv/bin/python`.
+
+---
+
+## 8. Teardown
 
 ```bash
 bash scripts/aws_worker.sh terminate        # asks you to type the instance id

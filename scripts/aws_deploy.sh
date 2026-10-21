@@ -51,7 +51,12 @@ snapshot() {
   local out="$1"
   echo "==> generating deploy-time snapshots"
   mkdir -p "$out"
-  ( cd "$HERE" && python3 -c "
+  # The project's own interpreter, which is the one that has OpenCV. Plain
+  # python3 is the system one and cannot import cv2, so the snapshot silently
+  # failed and the deployed page had nothing to fall back to.
+  local py="$HERE/.venv/bin/python"
+  [[ -x "$py" ]] || py="python3"
+  ( cd "$HERE" && "$py" -c "
 import json, pathlib
 from web.api import demo, health
 out = pathlib.Path('$out')

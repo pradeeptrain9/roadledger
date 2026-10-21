@@ -4,6 +4,11 @@
 
 OpenCV AI Competition 2026, powered by AWS.
 
+**Live:** <https://d3qxgjjnaz5lwp.cloudfront.net/> — the review UI, which answers
+from a deploy-time snapshot while the Graviton worker is stopped (its normal
+state). Live phone capture: <https://d3qxgjjnaz5lwp.cloudfront.net/capture.html>,
+which needs the worker running.
+
 Detecting a pothole is not the hard part and is not what a road authority can
 act on. RoadLedger rectifies the road plane, **measures** each defect's area in
 metric units, establishes how much independent views of it agree, separates real

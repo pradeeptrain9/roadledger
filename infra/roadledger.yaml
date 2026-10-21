@@ -171,10 +171,11 @@ Resources:
   WorkerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: >
-        RoadLedger Graviton worker. Inbound only from CloudFront's own prefix
-        list, so the instance is not reachable from the internet directly and
-        every request arrives through the distribution.
+      # One line, quoted, deliberately. EC2 restricts this field to
+      # "a-zA-Z0-9. _-:/()#,@[]+=&;{}!$*" and a YAML folded block (>) keeps a
+      # trailing newline, which is not in that set and fails the whole stack
+      # with a message that names the charset but not the offending character.
+      GroupDescription: "RoadLedger Graviton worker. Inbound only from the CloudFront origin-facing prefix list, so the instance is not reachable from the internet directly."
       VpcId: !Ref VpcId
       SecurityGroupIngress: !If
         - HasOriginPrefixList
