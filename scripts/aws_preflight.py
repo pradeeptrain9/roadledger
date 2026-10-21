@@ -27,6 +27,7 @@ PRICES = {
     "cool_software_per_hour": 0.01,
     "public_ipv4_per_hour": 0.005,
     "ebs_gp3_per_gb_month": 0.08,
+    "root_volume_gb": 50,
     "dynamodb_write_per_million": 1.25,
     "dynamodb_read_per_million": 0.25,
     "s3_per_gb_month": 0.023,
@@ -187,7 +188,7 @@ def costs(instance_type: str) -> None:
     -> about {hourly + PRICES['public_ipv4_per_hour']:.3f}/hr, or {(hourly + PRICES['public_ipv4_per_hour']) * 8:.2f} for an 8-hour working day.
 
   CONTINUOUSLY, WHETHER OR NOT ANYTHING RUNS:
-    EBS root volume   30 GB gp3   {30 * PRICES['ebs_gp3_per_gb_month']:.2f}/month
+    EBS root volume   50 GB gp3   {PRICES['root_volume_gb'] * PRICES['ebs_gp3_per_gb_month']:.2f}/month
     Elastic IP, if allocated and idle       {PRICES['public_ipv4_per_hour'] * 730:.2f}/month
     S3 and DynamoDB storage at this scale   under 0.10/month
     CloudFront        free tier covers 1 TB out and 10M requests a month
@@ -197,7 +198,7 @@ def costs(instance_type: str) -> None:
     Bedrock   Haiku-class, cents per agent run
 
   So: delete the stack or at minimum keep the worker stopped and the Elastic IP
-  released, and the standing cost is the 30 GB root volume at {30 * PRICES['ebs_gp3_per_gb_month']:.2f}/month.
+  released, and the standing cost is the 50 GB root volume at {PRICES['root_volume_gb'] * PRICES['ebs_gp3_per_gb_month']:.2f}/month.
   Terminating the worker removes that too.
 
   This script does NOT check your free-tier balance or month-to-date spend.

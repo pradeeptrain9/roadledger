@@ -124,15 +124,15 @@ version strings in the report and the benchmark output.
 
 ## 6. Costs, us-east-1 on-demand
 
-| | |
-|---|---|
-| **While the worker runs** | |
+| | | |
+|---|---|---|
+| **While the worker runs** | | |
 | `m7g.xlarge` | $0.1632/hr |
 | COOL software charge | $0.01/hr — waived during the 7-day trial |
 | public IPv4 | $0.005/hr |
 | | **≈ $0.18/hr, or $1.43 for an 8-hour day** |
 | **Standing, whether or not anything runs** | |
-| 30 GB gp3 root volume | $2.40/month |
+| 50 GB gp3 root volume | $4.00/month | the COOL AMI snapshot is 50 GB; EC2 will not launch onto less |
 | Elastic IP, if allocated | $3.65/month |
 | S3 + DynamoDB at this scale | under $0.10/month |
 | CloudFront | free tier covers 1 TB out and 10M requests/month |

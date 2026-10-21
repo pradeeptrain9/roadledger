@@ -203,6 +203,13 @@ Stated plainly, and in more detail in [docs/accuracy.md](docs/accuracy.md):
   ([negative-results.md](docs/negative-results.md) §7). No further synthetic
   tuning is planned: real footage with hand-measured areas is the instrument
   that can settle whether this is the algorithm or the rig.
+* **COOL is OpenCV 4.12.0, so OpenCV 5 is never claimed for it.** Verified on
+  the Graviton3 AMI on 2026-10-21: COOL provides `cv2` 4.12.0 with KleidiCV
+  0.5.0, while the pinned `opencv-python-headless==5.0.0.93` arm64 wheel
+  carries KleidiCV **26.03**. The OpenCV 5 wheel performs the substantive
+  analysis; COOL is the accelerated Arm execution path for the core proposal
+  pass. `bench/environment.py` refuses to let a run be mislabelled, and both
+  version strings go into every result file.
 * **All *accuracy* figures are from synthetic imagery.** The renderer is
   physically constructed — a real pinhole camera over a persistent ground
   plane, shading applied before sensor noise, penumbra on cast shadows — and its

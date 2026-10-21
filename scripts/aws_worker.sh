@@ -53,10 +53,11 @@ case "$ACTION" in
     else
       echo "==> launching a new worker from the stack's launch template"
       echo "    BILLING STARTS NOW. Stop it when you are done."
+      # Subnet, public address and security group all come from the launch
+      # template's network interface; specifying any of them here as well is
+      # what EC2 rejects as an invalid parameter combination.
       aws ec2 run-instances --region "$REGION" \
         --launch-template "LaunchTemplateId=$(template_id),Version=\$Latest" \
-        --subnet-id "$(subnet_id)" \
-        --associate-public-ip-address \
         --count 1 \
         --query 'Instances[0].InstanceId' --output text
     fi
@@ -104,7 +105,7 @@ case "$ACTION" in
   stop)
     id="$(instance_id)"
     [[ -n "$id" && "$id" != "None" ]] || { echo "no worker" >&2; exit 0; }
-    echo "==> stopping $id (compute charges stop; the 30 GB disk keeps costing ~2.40/month)"
+    echo "==> stopping $id (compute charges stop; the 50 GB disk keeps costing ~4.00/month)"
     aws ec2 stop-instances --region "$REGION" --instance-ids "$id" \
       --query 'StoppingInstances[0].CurrentState.Name' --output text
     ;;
@@ -112,7 +113,7 @@ case "$ACTION" in
   terminate)
     id="$(instance_id)"
     [[ -n "$id" && "$id" != "None" ]] || { echo "no worker" >&2; exit 0; }
-    echo "This permanently destroys worker $id and its 30 GB root volume."
+    echo "This permanently destroys worker $id and its 50 GB root volume."
     echo "The ledger, defect and trace tables and both S3 buckets are NOT touched."
     read -r -p "Type the instance id to confirm: " typed
     [[ "$typed" == "$id" ]] || { echo "aborted"; exit 1; }

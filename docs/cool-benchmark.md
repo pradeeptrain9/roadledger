@@ -111,10 +111,63 @@ objections into the result file:
 * COOL detected on a non-Arm machine -> flags that the award's Arm-path
   requirement is not met.
 
+## 3. Confirmed on the AMI: COOL is OpenCV 4.12.0 with an *older* KleidiCV
+
+Both findings above were inferences from the Marketplace listing. On
+**2026-10-21** the Graviton3 COOL AMI (`ami-0c0803594d6330678`,
+`COOL-graviton3-v3`) was launched on an `m7g.xlarge` and asked directly. Inside
+its own Python 3.12 virtual environment:
+
+```
+cv2_version  4.12.0
+cv2_path     /opt/cool/python_3.12/site-packages/cv2/python-3.12/cv2.cpython-312-aarch64-linux-gnu.so
+python       3.12.3
+Custom HAL:  YES (carotene (ver 0.0.1) KleidiCV (ver 0.5.0))
+Baseline:    NEON FP16 NEON_DOTPROD NEON_FP16 NEON_BF16
+```
+
+Two things follow, and the second was not expected.
+
+**COOL ships OpenCV 4.12.0, not OpenCV 5.** This was flagged as the project's
+day-one landmine and it is now a measured fact rather than a guess. The
+competition requires OpenCV 5 for the substantive analysis, so the claim is
+split exactly as planned and as `bench/environment.py` enforces: **the OpenCV 5
+wheel performs the substantive analysis, and COOL is the accelerated Arm
+execution path for the core proposal pass.** Both version strings are printed
+into every result file. OpenCV 5 is not claimed for COOL anywhere.
+
+**COOL carries KleidiCV 0.5.0; the free pip wheel carries 26.03.** The
+accelerator COOL is built around is several releases *behind* the one that
+`opencv-python-headless==5.0.0.93` already bundles for arm64. The listing's
+advertised 20–70% gains are measured against stock OpenCV 4.12.0, which has no
+KleidiCV at all — a baseline nobody on Arm has had to use since the wheel
+started bundling it.
+
+So the interesting question is no longer "how much faster is COOL than
+unaccelerated OpenCV", which the vendor has already answered, but **"is COOL
+faster than the free wheel that is already KleidiCV-accelerated, and newer?"**
+That is arm C against arm D, it is the comparison a practitioner actually
+faces, and this project has found no published answer to it. It may well go
+against COOL. Reporting it either way is the point.
+
 ## Status
 
-Arms A, B and D are **not yet measured**: they need the EC2 instances, and the
-COOL AMI subscription is timed so its 7-day free trial spans the benchmark and
-demo window. The harness, the workload and the honesty checks are complete and
-have been exercised on Arm locally (the figures above). Running the other arms
-is one command per instance.
+**Arm C/D environment verified on the real AMI** (above). The per-op and
+end-to-end numbers for arms A, B, C and D are **not yet measured**: they need
+the instances running, and the worker was terminated to hold the budget at
+zero after the environment check. The harness, the workload and the honesty
+checks are complete and have been exercised on Arm locally.
+
+One unrelated defect found during that launch, recorded because it will bite
+anyone reusing the template: the worker's bootstrap ran `set -euo pipefail`
+and then sourced the COOL venv's `activate`, which references `PYTHONPATH`
+without a default. Under `set -u` that is a fatal unbound-variable error, so
+cloud-init aborted before cloning the repository and the machine came up with
+COOL present and the pipeline absent. `/var/log/cloud-init-output.log` names it
+exactly:
+
+```
+/opt/cool/venvs/python_3.12/bin/activate: line 74: PYTHONPATH: unbound variable
+```
+
+The bootstrap now clears `-u` around the activation.

@@ -242,7 +242,18 @@ Resources:
         KeyName: !If [HasKeyPair, !Ref KeyPairName, !Ref "AWS::NoValue"]
         IamInstanceProfile:
           Arn: !GetAtt WorkerInstanceProfile.Arn
-        SecurityGroupIds: [!GetAtt WorkerSecurityGroup.GroupId]
+        # Networking lives here rather than on the run-instances call. EC2
+        # refuses a request that carries both an instance-level security group
+        # and a network interface spec, and a public address has to come from
+        # a network interface - so putting all three together in the template
+        # is the only combination that both works and keeps the launch command
+        # to one line.
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true
+            DeleteOnTermination: true
+            SubnetId: !Ref SubnetId
+            Groups: [!GetAtt WorkerSecurityGroup.GroupId]
         MetadataOptions:
           # IMDSv2 only.
           HttpTokens: required
@@ -250,7 +261,12 @@ Resources:
         BlockDeviceMappings:
           - DeviceName: /dev/sda1
             Ebs:
-              VolumeSize: 30
+              # 50 GB, not 30: the COOL AMI's own snapshot is 50 GB and EC2
+              # refuses to launch onto anything smaller. At gp3 rates this is
+              # 4.00 USD/month while the volume exists, which is the standing
+              # cost of a stopped worker and the reason to terminate rather
+              # than stop one that is finished with.
+              VolumeSize: 50
               VolumeType: gp3
               Encrypted: true
               DeleteOnTermination: true
@@ -270,7 +286,13 @@ Resources:
             # actually active BEFORE any work runs, and record it where the
             # benchmark and the API can read it. A run that silently used the
             # system wheel instead of COOL must never be reported as COOL.
+            # The COOL venv's activate script reads PYTHONPATH without a
+            # default, which under `set -u` is a fatal unbound-variable error.
+            # It aborted cloud-init before anything else ran, leaving a machine
+            # with COOL installed and no pipeline on it.
+            set +u
             source /opt/cool/venvs/python_3.12/bin/activate
+            set -u
             python3 -c "import cv2, json, sys; json.dump({'version': cv2.__version__, 'path': cv2.__file__}, open('/opt/roadledger-opencv.json','w'))"
             cat /opt/roadledger-opencv.json
 
