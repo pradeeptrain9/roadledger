@@ -108,31 +108,61 @@ def cloudfront_prefix_list(session: Any) -> str | None:
     return pl_id
 
 
+# Marketplace product code of the COOL Graviton3 listing. The AMI is selected
+# by this rather than by name, because the names are not what the listing page
+# implies: the published images are called "COOL-graviton3-v3", not anything
+# containing "Cloud Optimized OpenCV". An earlier version of this script matched
+# on a guessed name pattern and reported a correctly subscribed account as
+# unsubscribed, which is worse than not checking at all.
+COOL_GRAVITON3_PRODUCT_CODE = "9u1i10i9fbqhc92kgsb6ni7k9"
+
+# Graviton3 only. The other COOL listings are separate products with separate
+# subscriptions, and their AMIs will not boot on a c7g/m7g/r7g instance.
+OTHER_COOL_PRODUCT_CODES = {
+    "4eb70u7a6gb5bj1ijix5jlokv": "Graviton2 (c6g/m6g/r6g)",
+    "aajkmdd4qo3r7yhqg61a7aah9": "Graviton4/5",
+    "216fpdsdup19yw3vwuiwx254l": "Graviton5 m9g, KleidiCV 0.7.0",
+}
+
+
 def cool_ami(session: Any) -> str | None:
     print("\nCloud Optimized OpenCV (COOL) Marketplace AMI")
+    ec2 = session.client("ec2")
     try:
-        images = session.client("ec2").describe_images(
+        images = ec2.describe_images(
             Owners=["aws-marketplace"],
-            Filters=[{"Name": "name", "Values": ["*loud*ptimized*pen*"]}],
+            Filters=[
+                {"Name": "product-code", "Values": [COOL_GRAVITON3_PRODUCT_CODE]},
+                {"Name": "architecture", "Values": ["arm64"]},
+            ],
         )["Images"]
     except Exception as error:
         warn("could not search images", str(error).splitlines()[0])
         return None
-    arm = [
-        image
-        for image in images
-        if image.get("Architecture") == "arm64"
-    ]
-    if not arm:
+
+    if not images:
         warn(
-            "no COOL AMI visible to this account",
-            "subscribe on AWS Marketplace first (prodview-5b2boxpyztidw, Graviton3). "
-            "An unsubscribed listing is invisible to describe-images, so this is the "
-            "expected result before subscribing.",
+            "no Graviton3 COOL AMI found",
+            "subscribe on AWS Marketplace (prodview-5b2boxpyztidw, Graviton3) first",
         )
         return None
-    newest = sorted(arm, key=lambda image: image["CreationDate"])[-1]
-    ok("AMI", f"{newest['ImageId']}  {newest['Name']}")
+
+    newest = sorted(images, key=lambda image: image["CreationDate"])[-1]
+    ok("AMI", f"{newest['ImageId']}  {newest['Name']}  ({newest['CreationDate'][:10]})")
+    if len(images) > 1:
+        ok("older versions", ", ".join(sorted(i["ImageId"] for i in images if i is not newest)))
+
+    # Visibility is not entitlement. A Marketplace AMI can be described by any
+    # account; only launching proves the subscription, and launching costs
+    # money. So this reports what it can actually establish and says which part
+    # it cannot, rather than implying a confirmed subscription.
+    warn(
+        "visibility is not proof of subscription",
+        "any account can describe a Marketplace AMI. If the subscription is missing, "
+        "RunInstances fails with OptInRequired - which costs nothing and is the first "
+        "thing `scripts/aws_worker.sh start` would hit.",
+    )
+
     return newest["ImageId"]
 
 

@@ -32,17 +32,47 @@ stretch was prioritised.
 
 ![architecture](architecture.svg)
 
-Video lands in **S3**; **EventBridge** triggers a run; a **Lambda** (arm64)
-orchestrates it and starts an **ephemeral Graviton worker** running the COOL
-AMI. The worker serves the OpenCV pipeline as **MCP tools**, which the agent
-calls. Results — defects, work orders and the full decision trace — go to
-**DynamoDB**, and the reviewer-facing endpoint is served from **CloudFront**.
-**Bedrock** provides the optional language-model driver. **CloudWatch** carries
-tool calls, timings and rule firings.
+**One CloudFront distribution serves both the pages and the API.** That is not
+a deployment convenience. Browsers refuse a page the camera and GPS unless it
+is on a secure origin, so live phone capture *needs* HTTPS, and CloudFront
+supplies it on a stable name with no certificate to buy or renew. Putting the
+API behind the same distribution also means the phone page and the endpoint
+share an origin, so there is no CORS at all.
 
-The worker is started per run and stopped afterwards, because leaving it up
-would spend the budget on nothing. The endpoint therefore answers from cached
-results: a demo that only works while an instance is burning is not a demo.
+Its default behaviour serves the review UI from **S3**. A `/api/*` behaviour,
+caching disabled, routes to an **ephemeral Graviton worker** running the COOL
+AMI, which serves the OpenCV pipeline both as **MCP tools** for the agent and
+as the live measuring endpoint the phone posts frames to. Defects, work orders
+and the full decision trace go to **DynamoDB**; **Bedrock** provides the
+optional language-model driver; **CloudWatch** carries tool calls, timings and
+rule firings.
+
+Three consequences of the worker being ephemeral, each of which forced a design
+decision rather than being absorbed quietly.
+
+**The worker is not in the CloudFormation template.** A template that creates
+an instance means a deploy starts billing, and a stack left up over a judging
+window bills for every hour of it. The stack is the plumbing and
+`scripts/aws_worker.sh` is the tap. Deploying the stack starts no compute.
+
+**The review UI must work with the worker off**, which is its normal state. So
+`demo.json` and `health.json` are generated at deploy time and uploaded beside
+the page; the page tries the live API first and falls back. Verified with the
+API entirely absent: the full run renders — defects, costs, agent trace, route
+plan — above a line saying it is a snapshot and the worker is stopped. A demo
+that only works while an instance is burning is not a demo.
+
+**The cross-drive ledger cannot live in the worker.** Its entire value is that
+it outlives a drive, and an in-memory ledger on a machine designed to be
+stopped is not a cross-drive ledger. It is a DynamoDB table partitioned by
+**latitude/longitude cell rather than by run**, so a lookup during capture
+reads a fixed nine partitions however large the ledger grows — this runs
+several times a second while driving, and partitioning by run would scan every
+past drive on every defect.
+
+The worker takes no inbound traffic from the internet: its security group
+admits port 80 only from CloudFront's own managed prefix list, shell access is
+SSM, and there is no key pair.
 
 ---
 
@@ -217,7 +247,114 @@ The trace replays: each step carries the parameters used.
 
 ---
 
-## 5. Evaluation
+## 5. Live capture: measuring from a phone, while driving
+
+Full detail in [live-capture.md](live-capture.md).
+
+The same pipeline runs against a recorded video or against a phone mounted in a
+moving vehicle. The second is not the first with a different input, because the
+batch session is **pull**-based: to track a defect it reaches forward into
+frames that have already been decoded, and in a live stream the frames that
+would confirm a measurement have not been recorded yet.
+
+So `pipeline/live.py` inverts it. State is carried forward rather than fetched
+backward: each arriving frame is rectified and proposed once, open tracks are
+predicted into it from the vehicle's own motion, and each match appends one
+more independent measurement to a track already open.
+
+**The number visibly firms up.** A defect is reported the moment it is seen, as
+provisional, with one view behind it; at three comparable views it becomes
+confirmed, with a real spread. Confirmation is also allowed to go *backwards*.
+It was sticky at first, which produced a defect labelled confirmed whose own
+reasons said its spread could not be established — a later, closer view had
+been discarded by the vantage filter, dropping the comparable count from three
+to two, and the earlier confirmation stayed on the record contradicting it.
+Evidence that weakens is now shown as weaker.
+
+**Ego-motion comes from the speedometer.** Frame-to-frame forward distance is
+the GPS fix's own speed times the interval: Doppler-derived, indifferent to
+whether the asphalt has texture, and exact on a synthetic drive (10.2 m
+measured against 10.2 m of truth). The image-shift estimate is kept as a
+cross-check rather than discarded, because a disagreement between them is the
+earliest available signal that **the mount has moved**, which invalidates the
+calibration and every area measured after it. It runs every fifth frame: at
+11.9 ms it was the most expensive operation in the budget, more than
+rectification, proposal and refinement combined, and a mount-movement check
+that runs once a second catches a moved mount as well as one running five
+times a second.
+
+**Calibration takes about a minute**, and is the one input that cannot be
+recovered later. The operator drags a line onto the horizon and taps one marker
+at a measured distance — two observations, exactly enough for the two unknowns.
+Pointing at the horizon beats extrapolating to it: with markers at 3 m and 6 m
+the factor on the row difference is 2, so ±2 px of reading error moves the
+horizon 4–6 px, against 2 px when it is judged directly. Measured on a
+forward-simulated camera, focal length is off by 3.15% from two markers and
+2.63% from horizon-plus-marker. A camera height typed in centimetres — the one
+error nothing downstream can detect, which would scale every area by ten
+thousand — is refused before a single frame is measured.
+
+**There is a speed limit, and it is geometric rather than computational.** A
+defect must be seen at least three times from comparable distances, and because
+projected ground area falls as roughly the cube of distance, the vantage filter
+admits a band only 1.77× deep — about two metres of road at the near edge of
+the rectified view. Frames must therefore be about 0.8 m apart, which is the
+spacing that confirmed 8 of 8 defects in the sweep; at 2.0 m nothing confirms
+at any setting. The server computes the required rate from the measured speed,
+measures what the link is actually achieving from frame arrival intervals, and
+says plainly when the vehicle is too fast for its own setup:
+
+> at 45 km/h frames land 1.5 m apart, and a defect needs several views from
+> similar distances to be sized at all. This phone and link are managing 8.3
+> frames a second, so about 24 km/h is the fastest this setup can measure from.
+> Defects will still be reported, marked unconfirmed and not costed.
+
+**A phone on mobile data measures at survey speed, not traffic speed.** That is
+a real limit on the product and it is reported to the operator rather than
+hidden behind confident-looking areas.
+
+**Upload resolution decides whether anything confirms at all**, which was not
+obvious and cost a day. Footprint falls as the *square* of upload width, so
+halving it quarters the evidence. Through the real endpoint, one drive past two
+potholes and a shadow at 22 km/h:
+
+| upload width | views per defect | confirmed | spread on the larger pothole |
+|---|---|---|---|
+| 640 | 2 | 0 of 3 | could not be established |
+| 960 | 3 | 1 of 3 | 2.8% |
+| **1280** | **5** | **3 of 3** | **0.9%** |
+
+JPEG *quality*, swept from 30 to 70, moved the measured areas by less than the
+run-to-run variation. Fidelity is not the constraint; resolution is. Lowering
+it to save bandwidth does not buy a rougher measurement — it buys none.
+
+**Position is measured differently from area and reported separately.** Area
+comes from image geometry and does not involve GPS at all. Position comes from
+a consumer GNSS chip behind a windscreen and is good to 4–20 m. Every position
+carries its own accuracy and its provenance: the fix's own course, a course
+derived from consecutive fixes, or — with no usable heading — the defect placed
+*at the camera* with its accuracy widened by the distance it lies ahead.
+Inventing a heading to make the number look tighter would be the easy option
+and the wrong one.
+
+Duplicates are handled differently depending on what relates them. Within one
+drive, rectified geometry and ego-motion are sub-metre, so detections within
+0.6 m are merged. **Across drives only GPS relates them, so nothing is ever
+merged** — a nearby defect is reported as a revisit *candidate* with the
+distance and the radius those two fixes can actually resolve. Merging two real
+potholes three metres apart because the GPS was off by five would quietly halve
+a road authority's defect count. A confirmed revisit carries an area trend,
+which is a different maintenance decision and something a one-shot detector
+cannot produce.
+
+`scripts/simulate_phone.py` speaks the same API the phone does — same JPEG
+round trip, same base64 framing, same server-side calibration, same
+one-frame-at-a-time lock — so the live path is demonstrable and
+regression-testable from a laptop with no vehicle.
+
+---
+
+## 6. Evaluation
 
 Full detail in [accuracy.md](accuracy.md); the design of the ground truth is in
 §7.
@@ -247,15 +384,42 @@ Supporting measurements: ego-motion within 0.1 m on **12 of 13** frame pairs;
 defect ground position within **0.15 m**; the same defect assigned a consistent
 station across six frames to **±3 cm**.
 
-Correctness is held by **21 invariant tests** (`tests/test_pipeline.py`), most
-of which encode a bug that was actually found: that privacy scrubbing must not
-degrade rectification, that an unmeasured defect reads as maximum distrust and
-never as agreement, that priority-1 always requires approval, that a confuser is
-never classified as costed damage.
+**The live path, evaluated separately**, because it is governed by different
+limits — it sees the whole approach rather than a fixed window, and it reaches
+places the batch path never does. On a held-out grid of 15 drives spanning five
+radii (0.16–0.38 m), three lateral offsets, three start distances and three
+unused noise seeds:
+
+| | |
+|---|---|
+| Area bias | **−0.7%** |
+| Area MAE | **18.5%** |
+| Max absolute error | 56% |
+| Confirmed at 0.8 m frame spacing | 11 of 12 |
+
+That MAE is three times the figure above and the gap is the finding, not an
+embarrassment to be smoothed over: the held-out grid is deliberately harder —
+smaller, more distant defects at varied offsets — and small distant defects are
+where this measurement is weak. A large defect and a small one in the same
+drive have come back −12% and +81%.
+
+Following the whole approach also exposed a bug the batch path structurally
+could not: the view taken as a defect crosses the near edge of the rectified
+band has its boundary **cut off by the frame**, and reported 0.087 m² against a
+truth of 0.363 — 76% low — which, being the lowest of three, then set the
+median. A truncated boundary is now refused outright rather than measured.
+
+Correctness is held by **45 invariant tests** (`tests/test_pipeline.py`,
+`tests/test_live.py`), most of which encode a bug that was actually found: that
+privacy scrubbing must not degrade rectification, that an unmeasured defect
+reads as maximum distrust and never as agreement, that priority-1 always
+requires approval, that a confuser is never classified as costed damage, that
+a clipped boundary is refused, that confirmation is allowed to go backwards,
+and that a cross-drive GPS match is a candidate and never a merge.
 
 ---
 
-## 6. COOL and AWS
+## 7. COOL and AWS
 
 Design and findings in [cool-benchmark.md](cool-benchmark.md). Two things
 changed how this is reported.
@@ -285,11 +449,12 @@ checks are complete and exercised on Arm locally.
 
 ---
 
-## 7. Limitations, and what was got wrong
+## 8. Limitations, and what was got wrong
 
-Six hypotheses were tested and rejected during this build; they are documented
-in full in [negative-results.md](negative-results.md) because a report listing
-only what worked is not evaluation evidence. The ones that changed the design:
+Seven hypotheses were tested and rejected during this build; they are
+documented in full in [negative-results.md](negative-results.md) because a
+report listing only what worked is not evaluation evidence. The ones that
+changed the design:
 
 * **A perimeter-proportional bias correction** looked principled and was
   rejected on held-out data — it made the holdout worse (MAE 6.5% → 9.1%).
@@ -311,15 +476,32 @@ only what worked is not evaluation evidence. The ones that changed the design:
   **0.00**. An over-inclusive privacy filter is not automatically a safe one.
 * **Hand-tuned classifier bands** reached 3/12 on held-out confusers and were
   replaced by a fitted boundary at 12/12.
+* **Retuning the closing kernel** to fix small-defect over-measurement looked
+  like a 3.5× improvement in MAE on a development grid — and did not replicate
+  on held-out data (18.1% against 18.5%, inside the noise, with the incumbent
+  holding the better bias and worst case). It was not changed.
+
+That last one is the third tuning change in this project to look strong on a
+development grid and fail on held-out data, after the perimeter-proportional
+correction twice. The pattern is consistent enough to be the finding:
+per-configuration variance on the synthetic rig is large compared with the
+effects being chased, so a sweep varying one factor will keep producing false
+positives. **No further synthetic tuning is planned.** The remaining question —
+whether the residual error is the algorithm or the rig's own projection chain —
+cannot be answered by the rig under suspicion, and the binding requirement is
+real footage with hand-measured areas.
 
 Standing limitations are listed in the [README](../README.md#known-limitations):
-synthetic-only results, a residual size-dependent bias, patches undetectable,
-shadow/wet confusion, assumed depth scale without calibration, and a hard
-resolution floor below which nothing is measured.
+synthetic-only accuracy results, detection that does not yet work on real roads
+(RDD2022 recall 0.429, damage precision 0.314 — below the majority baseline),
+a residual size-dependent bias, patches undetectable, shadow/wet confusion,
+assumed depth scale without calibration, a hard resolution floor below which
+nothing is measured, and live capture that works at survey speed rather than
+traffic speed.
 
 ---
 
-## 8. Responsible use
+## 9. Responsible use
 
 **Privacy is not a feature here, it is a precondition.** Dashcam footage of
 public roads incidentally records pedestrians and vehicle registration plates. A
