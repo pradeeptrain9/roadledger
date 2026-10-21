@@ -1,0 +1,26 @@
+# Virtual environment
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Third-party data, fetched rather than redistributed.
+#
+# RDD2022 is CC BY 4.0 and could be redistributed with attribution, but
+# scripts/fetch_rdd2022.py pulls exactly the subset used - 475 images in 40 MB
+# rather than the 13.2 GB bundle - so shipping it here would add weight without
+# adding reproducibility. Run the script.
+data/rdd2022/
+data/raw/
+data/frames/
+data/footage/
+
+# Generated figures. Reproduced by the eval and test modules that make them.
+data/artifacts/
+
+# Downloaded by scripts/fetch_models.sh, with a checksum gate.
+models/*.onnx
+
+# Local scratch
+*.log
+nohup.out

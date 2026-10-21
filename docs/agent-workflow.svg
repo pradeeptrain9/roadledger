@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" width="960" height="640" font-family="ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif">
+  <style>
+    .bg { fill: #fbfaf8; }
+    .p { fill: #eef1f8; stroke: #6a7fc4; stroke-width: 1.5; rx: 8; }
+    .d { fill: #fff8ec; stroke: #e0a558; stroke-width: 1.5; }
+    .a { fill: #eef6f2; stroke: #4e9b85; stroke-width: 1.5; rx: 8; }
+    .h { fill: #fdf3f1; stroke: #c98a7e; stroke-width: 1.5; rx: 8; }
+    .tb { font-size: 12.5px; fill: #1a1a1a; font-weight: 600; }
+    .t { font-size: 12px; fill: #1a1a1a; }
+    .s { font-size: 10.5px; fill: #6b6b6b; }
+    .ln { stroke: #9a948a; stroke-width: 1.6; fill: none; marker-end: url(#a); }
+    .no { stroke: #4e9b85; stroke-width: 1.8; fill: none; marker-end: url(#ag); }
+    .yes { stroke: #c0803a; stroke-width: 1.8; fill: none; marker-end: url(#ay); }
+    .el { font-size: 10.5px; fill: #6b6b6b; font-weight: 600; }
+    .key { font-size: 11px; fill: #6b6b6b; }
+  </style>
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#9a948a"/></marker>
+    <marker id="ag" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#4e9b85"/></marker>
+    <marker id="ay" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#c0803a"/></marker>
+  </defs>
+  <rect class="bg" width="960" height="640"/>
+  <text x="24" y="30" class="tb" font-size="16">Agent workflow — perception, decision, action</text>
+  <text x="24" y="50" class="s">Every amber diamond thresholds a quantity the vision stages produced. Each one changes which tool is called next.</text>
+
+  <!-- perception column -->
+  <rect class="p" x="24" y="76" width="188" height="48"/>
+  <text x="36" y="96" class="tb">rectify_frame</text>
+  <text x="36" y="112" class="s">→ quality, metres/pixel</text>
+
+  <path class="ln" d="M118 124 L118 146"/>
+  <polygon class="d" points="118,146 236,178 118,210 0,178"/>
+  <text x="62" y="174" class="t">quality &lt; 0.35?</text>
+  <text x="70" y="190" class="s">homography</text>
+
+  <path class="yes" d="M236 178 L300 178"/>
+  <text x="248" y="170" class="el">yes</text>
+  <rect class="a" x="300" y="154" width="190" height="48"/>
+  <text x="312" y="174" class="tb">re-rectify, wider band</text>
+  <text x="312" y="190" class="s">still low → skip the frame</text>
+
+  <path class="no" d="M118 210 L118 236"/>
+  <text x="124" y="228" class="el">no</text>
+  <rect class="p" x="24" y="236" width="188" height="48"/>
+  <text x="36" y="256" class="tb">propose_candidates</text>
+  <text x="36" y="272" class="s">resize · threshold · contours</text>
+
+  <path class="ln" d="M118 284 L118 306"/>
+  <polygon class="d" points="118,306 236,338 118,370 0,338"/>
+  <text x="56" y="334" class="t">&gt; 25 candidates?</text>
+  <text x="66" y="350" class="s">threshold loose</text>
+
+  <path class="yes" d="M236 338 L300 338"/>
+  <text x="248" y="330" class="el">yes</text>
+  <rect class="a" x="300" y="314" width="190" height="48"/>
+  <text x="312" y="334" class="tb">raise block_size, C</text>
+  <text x="312" y="350" class="s">re-propose, do not refine noise</text>
+
+  <path class="no" d="M118 370 L118 396"/>
+  <text x="124" y="388" class="el">no</text>
+  <rect class="p" x="24" y="396" width="188" height="48"/>
+  <text x="36" y="416" class="tb">classify_surface</text>
+  <text x="36" y="432" class="s">edge width, texture, darkness</text>
+
+  <path class="ln" d="M118 444 L118 466"/>
+  <polygon class="d" points="118,466 236,498 118,530 0,498"/>
+  <text x="54" y="494" class="t">confidence &lt; 0.55?</text>
+  <text x="76" y="510" class="s">ambiguous</text>
+
+  <path class="yes" d="M236 498 L300 498"/>
+  <text x="248" y="490" class="el">yes</text>
+  <rect class="a" x="300" y="462" width="190" height="44"/>
+  <text x="312" y="481" class="tb">refine, more contrast</text>
+  <text x="312" y="497" class="s">a second look, not a retry</text>
+  <path class="yes" d="M395 506 L395 530"/>
+  <rect class="h" x="300" y="530" width="190" height="40"/>
+  <text x="312" y="548" class="tb">escalate to human</text>
+  <text x="312" y="563" class="s">class not established</text>
+
+  <!-- right column: measurement -->
+  <path class="no" d="M118 530 L118 592 L560 592 L560 128"/>
+  <text x="124" y="552" class="el">no</text>
+  <rect class="p" x="560" y="76" width="200" height="52"/>
+  <text x="572" y="96" class="tb">refine_roi</text>
+  <text x="572" y="112" class="s">area m², source footprint</text>
+
+  <path class="ln" d="M660 128 L660 150"/>
+  <polygon class="d" points="660,150 778,182 660,214 542,182"/>
+  <text x="596" y="178" class="t">footprint &lt; 300 px?</text>
+  <text x="614" y="194" class="s">too distant</text>
+  <path class="yes" d="M778 182 L830 182"/>
+  <text x="786" y="174" class="el">yes</text>
+  <rect class="h" x="830" y="158" width="118" height="48"/>
+  <text x="842" y="178" class="tb">defer</text>
+  <text x="842" y="194" class="s">no area reported</text>
+
+  <path class="no" d="M660 214 L660 240"/>
+  <text x="666" y="232" class="el">no</text>
+  <rect class="p" x="560" y="240" width="200" height="52"/>
+  <text x="572" y="260" class="tb">track_across_frames</text>
+  <text x="572" y="276" class="s">→ median area, iqr_ratio</text>
+
+  <path class="ln" d="M660 292 L660 314"/>
+  <polygon class="d" points="660,314 778,346 660,378 542,346"/>
+  <text x="600" y="342" class="t">iqr_ratio &gt; 0.20?</text>
+  <text x="594" y="358" class="s">views disagree</text>
+
+  <path class="yes" d="M778 346 L830 346"/>
+  <text x="786" y="338" class="el">yes</text>
+  <rect class="a" x="830" y="306" width="118" height="46"/>
+  <text x="842" y="325" class="tb">more views</text>
+  <text x="842" y="341" class="s">re-track, k = 10</text>
+  <path class="yes" d="M889 352 L889 376"/>
+  <rect class="h" x="830" y="376" width="118" height="54"/>
+  <text x="842" y="395" class="tb">&gt; 0.35 still?</text>
+  <text x="842" y="411" class="s">escalate to</text>
+  <text x="842" y="424" class="s">human review</text>
+
+  <path class="no" d="M660 378 L660 404"/>
+  <text x="666" y="396" class="el">no</text>
+  <rect class="p" x="560" y="404" width="200" height="56" fill="#ffffff" stroke="#8a857c"/>
+  <text x="572" y="424" class="tb">score_defect</text>
+  <text x="572" y="440" class="s">deterministic: severity,</text>
+  <text x="572" y="453" class="s">priority, cost. No model.</text>
+
+  <path class="ln" d="M660 460 L660 482"/>
+  <polygon class="d" points="660,482 778,512 660,542 542,512"/>
+  <text x="608" y="508" class="t">priority 1, or</text>
+  <text x="596" y="524" class="t">engine flagged it?</text>
+
+  <path class="yes" d="M778 512 L830 512"/>
+  <text x="786" y="504" class="el">yes</text>
+  <rect class="h" x="830" y="488" width="118" height="48"/>
+  <text x="842" y="507" class="tb">hold</text>
+  <text x="842" y="523" class="s">human approval</text>
+
+  <path class="no" d="M660 542 L660 568"/>
+  <text x="666" y="560" class="el">no</text>
+  <rect class="a" x="560" y="568" width="200" height="40"/>
+  <text x="572" y="592" class="tb">emit_work_order</text>
+
+  <!-- key -->
+  <rect x="24" y="604" width="14" height="12" class="p"/>
+  <text x="44" y="614" class="key">perception (OpenCV 5)</text>
+  <polygon class="d" points="186,604 200,610 186,616 172,610"/>
+  <text x="206" y="614" class="key">decision on a measured value</text>
+  <rect x="384" y="604" width="14" height="12" class="a"/>
+  <text x="404" y="614" class="key">action</text>
+  <rect x="456" y="604" width="14" height="12" class="h"/>
+  <text x="476" y="614" class="key">human control</text>
+</svg>

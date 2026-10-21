@@ -1,0 +1,96 @@
+{
+  "feature_names": [
+    "darkness_ratio",
+    "edge_width_px",
+    "texture_ratio",
+    "elongation",
+    "solidity",
+    "rect_fill",
+    "boundary_contrast",
+    "boundary_sharpness"
+  ],
+  "labels": [
+    "pothole",
+    "crack",
+    "not_damage"
+  ],
+  "mean": [
+    0.7866110808465984,
+    1.8459173676272904,
+    1.8736084081575335,
+    3.101551402917383,
+    0.629417183951076,
+    0.4663673789704456,
+    15.472561996783062,
+    35.68456379353037
+  ],
+  "scale": [
+    0.21854872953057922,
+    0.7483987941640913,
+    2.5199823633374896,
+    2.088626174515698,
+    0.14601334189559104,
+    0.124104560227482,
+    13.035946767035892,
+    29.538393945328483
+  ],
+  "weights": [
+    [
+      0.34551671481532703,
+      -0.04459076712286326,
+      -0.3008973799467731
+    ],
+    [
+      -0.1547841831044489,
+      -0.24461689569522768,
+      0.39939796207829265
+    ],
+    [
+      0.17282792192070573,
+      -0.3014785212749137,
+      0.12872031675722448
+    ],
+    [
+      -0.529179577727422,
+      0.21182872955056317,
+      0.31726761284709987
+    ],
+    [
+      -0.3779630243744207,
+      0.05421271572531914,
+      0.3235795579516876
+    ],
+    [
+      0.16145570207224924,
+      0.0019017820463567837,
+      -0.16342925070665054
+    ],
+    [
+      0.06644804267768273,
+      0.10308710392553405,
+      -0.16947541978877445
+    ],
+    [
+      -0.08457138171013884,
+      -0.690508807822743,
+      0.7751276236680819
+    ]
+  ],
+  "bias": [
+    -0.20875798803259688,
+    -0.151488200966647,
+    0.36024618899924316
+  ],
+  "provenance": {
+    "source": "RDD2022 real imagery (data/rdd2022/India)",
+    "n_samples": 957,
+    "n_images": 148,
+    "damage_precision": 0.3141,
+    "damage_recall": 0.8109,
+    "damage_f1": 0.4528,
+    "majority_baseline": 0.79,
+    "cross_validation": "grouped by source image",
+    "labels_from": "RDD2022 Pascal VOC annotations (weak supervision)",
+    "note": "Three classes only. Real annotations distinguish pothole from crack and say nothing about shadows or standing water, so those classes are not fitted here rather than being carried over from synthetic data."
+  }
+}

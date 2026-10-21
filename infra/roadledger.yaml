@@ -1,0 +1,507 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  RoadLedger - measured road-defect triage. Serverless control plane plus an
+  ephemeral Graviton worker running the Cloud Optimized OpenCV (COOL) AMI.
+  Everything is either serverless or started on demand, because the worker is
+  the only thing that costs money while idle and so is never left running.
+
+Parameters:
+  CoolAmiId:
+    Type: AWS::EC2::Image::Id
+    Description: >
+      AMI id for "Cloud Optimized OpenCV For Graviton3" from AWS Marketplace
+      (prodview-5b2boxpyztidw) in THIS region. Subscribe first; the listing
+      carries an hourly software charge with a 7-day free trial.
+  WorkerInstanceType:
+    Type: String
+    Default: m7g.xlarge
+    AllowedValues: [c7g.xlarge, c7g.2xlarge, m7g.xlarge, m7g.2xlarge, r7g.xlarge]
+    Description: Graviton3 family only - the COOL Graviton3 AMI requires c7g/m7g/r7g.
+  KeyPairName:
+    Type: String
+    Default: ""
+    Description: Optional EC2 key pair. Leave empty to use SSM Session Manager only.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+  RetentionDays:
+    Type: Number
+    Default: 14
+    Description: CloudWatch log retention. Short by default to stay inside free tier.
+  LiveOriginDomain:
+    Type: String
+    Default: ""
+    Description: >
+      Public DNS name of the running worker, e.g.
+      ec2-1-2-3-4.compute-1.amazonaws.com. Leave empty on the first deploy;
+      fill it in once the worker has an Elastic IP and redeploy, which turns on
+      the /api/* behaviour and makes live phone capture reachable over HTTPS.
+      Two phases rather than a custom resource, because CloudFormation cannot
+      derive the EC2 public DNS name from an Elastic IP and a Lambda-backed
+      custom resource is more moving parts than this is worth.
+  CloudFrontOriginPrefixList:
+    Type: String
+    Default: ""
+    Description: >
+      Id of the AWS-managed prefix list com.amazonaws.global.cloudfront.origin-facing
+      in this region. scripts/aws_deploy.sh resolves it; CloudFormation cannot
+      look a managed prefix list up by name. Leave empty and the worker accepts
+      no inbound HTTP at all, which is the safe default.
+  AllocateLiveAddress:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >
+      Allocate an Elastic IP so the worker's DNS name survives a stop/start.
+      AWS bills every public IPv4 address at 0.005 USD/hour whether or not it
+      is attached, so an address left allocated costs about 3.60 USD a month.
+      Leave false until the live demo, and release it afterwards.
+
+Conditions:
+  HasKeyPair: !Not [!Equals [!Ref KeyPairName, ""]]
+  HasLiveOrigin: !Not [!Equals [!Ref LiveOriginDomain, ""]]
+  HasOriginPrefixList: !Not [!Equals [!Ref CloudFrontOriginPrefixList, ""]]
+  WantsLiveAddress: !Equals [!Ref AllocateLiveAddress, "true"]
+
+Resources:
+
+  # ---- storage -------------------------------------------------------------
+
+  MediaBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "roadledger-media-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          # Source footage is personal data even after scrubbing. It is kept
+          # only as long as a run needs it; the derived ledger is what persists.
+          - Id: expire-raw-footage
+            Status: Enabled
+            Prefix: raw/
+            ExpirationInDays: 30
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 3
+
+  # ---- ledger --------------------------------------------------------------
+
+  DefectTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-defects"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: run_id
+          AttributeType: S
+        - AttributeName: defect_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: run_id
+          KeyType: HASH
+        - AttributeName: defect_id
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  TraceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-traces"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: run_id
+          AttributeType: S
+        - AttributeName: step_index
+          AttributeType: N
+      KeySchema:
+        - AttributeName: run_id
+          KeyType: HASH
+        - AttributeName: step_index
+          KeyType: RANGE
+      # The decision trace is the audit record for a work order, so it outlives
+      # the footage but not forever.
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  LedgerTable:
+    Type: AWS::DynamoDB::Table
+    # The cross-drive record is the one piece of state whose whole value is
+    # that it outlives the stack. Dropping it on a teardown would silently
+    # discard every defect ever located.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub "${AWS::StackName}-ledger"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        # Partitioned by latitude/longitude cell, not by run: a lookup during
+        # capture reads the nine cells around the vehicle, so its cost is
+        # constant however large the ledger grows. Partitioning by run would
+        # force a scan of every past drive on every defect.
+        - AttributeName: cell
+          AttributeType: S
+        - AttributeName: entry_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: cell
+          KeyType: HASH
+        - AttributeName: entry_id
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # ---- the Graviton worker -------------------------------------------------
+
+  WorkerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: >
+        RoadLedger Graviton worker. Inbound only from CloudFront's own prefix
+        list, so the instance is not reachable from the internet directly and
+        every request arrives through the distribution.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress: !If
+        - HasOriginPrefixList
+        - - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            SourcePrefixListId: !Ref CloudFrontOriginPrefixList
+            Description: HTTP from CloudFront origin-facing ranges only
+        - !Ref "AWS::NoValue"
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS to AWS APIs and package mirrors
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-worker"
+
+  WorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: roadledger-worker
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub "${MediaBucket.Arn}/*"
+              - Effect: Allow
+                Action: [dynamodb:PutItem, dynamodb:BatchWriteItem, dynamodb:UpdateItem]
+                Resource: [!GetAtt DefectTable.Arn, !GetAtt TraceTable.Arn]
+              - Effect: Allow
+                # The live path reads the ledger as well as writing it: a
+                # revisit cannot be recognised without first looking.
+                Action: [dynamodb:PutItem, dynamodb:GetItem, dynamodb:Query, dynamodb:Scan]
+                Resource: !GetAtt LedgerTable.Arn
+              - Effect: Allow
+                Action: [bedrock:InvokeModel, bedrock:Converse]
+                # Scoped to the loop's own model rather than all of Bedrock.
+                Resource: !Sub "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-*"
+
+  WorkerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref WorkerRole]
+
+  WorkerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${AWS::StackName}-worker"
+      LaunchTemplateData:
+        ImageId: !Ref CoolAmiId
+        InstanceType: !Ref WorkerInstanceType
+        KeyName: !If [HasKeyPair, !Ref KeyPairName, !Ref "AWS::NoValue"]
+        IamInstanceProfile:
+          Arn: !GetAtt WorkerInstanceProfile.Arn
+        SecurityGroupIds: [!GetAtt WorkerSecurityGroup.GroupId]
+        MetadataOptions:
+          # IMDSv2 only.
+          HttpTokens: required
+          HttpPutResponseHopLimit: 2
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: 30
+              VolumeType: gp3
+              Encrypted: true
+              DeleteOnTermination: true
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub "${AWS::StackName}-worker"
+              - Key: roadledger:ephemeral
+                Value: "true"
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -euxo pipefail
+
+            # The COOL AMI provides cv2 from /opt/cool. Verify which OpenCV is
+            # actually active BEFORE any work runs, and record it where the
+            # benchmark and the API can read it. A run that silently used the
+            # system wheel instead of COOL must never be reported as COOL.
+            source /opt/cool/venvs/python_3.12/bin/activate
+            python3 -c "import cv2, json, sys; json.dump({'version': cv2.__version__, 'path': cv2.__file__}, open('/opt/roadledger-opencv.json','w'))"
+            cat /opt/roadledger-opencv.json
+
+            mkdir -p /opt/roadledger
+            aws s3 sync "s3://${MediaBucket}/code/" /opt/roadledger/ || true
+            cd /opt/roadledger
+
+            # Deliberately NOT pip installing opencv here: the COOL environment
+            # provides it, and installing the wheel would shadow the build this
+            # instance exists to exercise.
+            python3 -m pip install --quiet numpy==2.2.6 boto3==1.35.76 || true
+
+            python3 -m pip install --quiet \
+              fastapi==0.115.6 uvicorn==0.34.0 pydantic==2.10.4 || true
+
+            # The MCP server is how the agent reaches these tools.
+            nohup python3 -m mcp.opencv_mcp_server > /var/log/roadledger-mcp.log 2>&1 &
+
+            # The measuring endpoint the phone talks to. It binds to port 80
+            # on all interfaces, which is only reachable through CloudFront
+            # because the security group admits nothing else.
+            #
+            # ROADLEDGER_LEDGER_TABLE is what turns the cross-drive ledger from
+            # a process-lifetime cache into a record. Without it the capture
+            # endpoint still works and still measures; it just forgets every
+            # defect when this instance stops, which it is designed to do.
+            cat > /etc/roadledger.env <<ENVEOF
+            ROADLEDGER_LEDGER_TABLE=${LedgerTable}
+            AWS_REGION=${AWS::Region}
+            ENVEOF
+            set -a; . /etc/roadledger.env; set +a
+            nohup python3 -m uvicorn web.api:app --host 0.0.0.0 --port 80 \
+              --workers 1 > /var/log/roadledger-api.log 2>&1 &
+
+            # One worker, deliberately. A live capture session holds tracking
+            # state in memory between frames, so two workers would hand
+            # consecutive frames of one drive to two different processes and
+            # every track would break.
+
+  # ---- public surface ------------------------------------------------------
+  #
+  # One distribution serves both the pages and the API, which is not a
+  # deployment convenience - it is what makes live capture work at all.
+  # Browsers refuse a page the camera and GPS unless it is on a secure origin,
+  # and CloudFront supplies HTTPS on a stable name with no certificate to
+  # manage. Putting the API behind the same distribution also means the phone
+  # page and the endpoint share an origin, so there is no CORS at all.
+
+  StaticBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "roadledger-site-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  SiteOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-site-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  StaticBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref StaticBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub "${StaticBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                # Only this distribution, not CloudFront in general.
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${SiteDistribution}"
+
+  SiteDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "${AWS::StackName} - review UI and live capture"
+        DefaultRootObject: index.html
+        # PriceClass_100 is North America and Europe only. Cheapest, and the
+        # free tier covers 1 TB out and 10 million requests a month, which a
+        # judging window does not approach.
+        PriceClass: PriceClass_100
+        HttpVersion: http2
+        Origins: !If
+          - HasLiveOrigin
+          - - Id: site
+              DomainName: !GetAtt StaticBucket.RegionalDomainName
+              OriginAccessControlId: !GetAtt SiteOriginAccessControl.Id
+              S3OriginConfig: {}
+            - Id: live
+              DomainName: !Ref LiveOriginDomain
+              CustomOriginConfig:
+                # HTTP to the origin: the hop is inside AWS and the instance
+                # has no certificate. The viewer-facing hop is HTTPS, which is
+                # the one the browser's camera and location gates care about.
+                OriginProtocolPolicy: http-only
+                HTTPPort: 80
+                OriginReadTimeout: 30
+          - - Id: site
+              DomainName: !GetAtt StaticBucket.RegionalDomainName
+              OriginAccessControlId: !GetAtt SiteOriginAccessControl.Id
+              S3OriginConfig: {}
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # Managed-CachingOptimized
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        CacheBehaviors: !If
+          - HasLiveOrigin
+          - - PathPattern: /api/*
+              TargetOriginId: live
+              ViewerProtocolPolicy: https-only
+              AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+              CachedMethods: [GET, HEAD]
+              Compress: false
+              # Managed-CachingDisabled. A measurement must never be served
+              # from a cache: every frame is a different frame.
+              CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+              # Managed-AllViewerExceptHostHeader
+              OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+          - !Ref "AWS::NoValue"
+        ViewerCertificate:
+          # The default *.cloudfront.net certificate. No domain to buy, no
+          # certificate to renew, and HTTPS from the first minute.
+          CloudFrontDefaultCertificate: true
+
+  LiveAddress:
+    Type: AWS::EC2::EIP
+    Condition: WantsLiveAddress
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-live"
+
+  # ---- control plane -------------------------------------------------------
+
+  OrchestratorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: roadledger-orchestrator
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [ec2:RunInstances, ec2:CreateTags]
+                Resource: "*"
+              - Effect: Allow
+                # Stopping and terminating are restricted to instances this
+                # stack launched, so a bug here cannot reach anything else in
+                # the account.
+                Action: [ec2:TerminateInstances, ec2:StopInstances, ec2:StartInstances]
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    "ec2:ResourceTag/roadledger:ephemeral": "true"
+              - Effect: Allow
+                Action: [ec2:DescribeInstances, ec2:DescribeInstanceStatus]
+                Resource: "*"
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt WorkerRole.Arn
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:PutItem, dynamodb:UpdateItem]
+                Resource: [!GetAtt DefectTable.Arn, !GetAtt TraceTable.Arn]
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub "${MediaBucket.Arn}/*"
+
+  OrchestratorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-orchestrator"
+      RetentionInDays: !Ref RetentionDays
+
+Outputs:
+  MediaBucketName:
+    Value: !Ref MediaBucket
+    Description: Upload footage under raw/ and deploy application code under code/.
+  DefectTableName:
+    Value: !Ref DefectTable
+  TraceTableName:
+    Value: !Ref TraceTable
+  WorkerLaunchTemplateId:
+    Value: !Ref WorkerLaunchTemplate
+    Description: Launch the Graviton worker from this template, per run.
+  SiteUrl:
+    Description: Review UI. Judge-accessible, served from S3, always up.
+    Value: !Sub "https://${SiteDistribution.DomainName}/"
+  CaptureUrl:
+    Description: >
+      Live capture page, to open on a phone mounted in the vehicle. HTTPS, so
+      the browser will grant the camera and location. Measuring needs the
+      worker running and LiveOriginDomain set.
+    Value: !Sub "https://${SiteDistribution.DomainName}/capture.html"
+  LedgerTableName:
+    Description: Cross-drive geographic ledger. Retained on stack deletion.
+    Value: !Ref LedgerTable
+  StaticBucketName:
+    Value: !Ref StaticBucket
+  LiveAddressIp:
+    Condition: WantsLiveAddress
+    Description: Elastic IP for the worker. Billed at 0.005 USD/hour while allocated.
+    Value: !Ref LiveAddress
+  VerifyCoolCommand:
+    Description: Run this on the worker before trusting any COOL claim.
+    Value: "source /opt/cool/venvs/python_3.12/bin/activate && python3 -c \"import cv2; print(cv2.__version__, cv2.__file__)\""

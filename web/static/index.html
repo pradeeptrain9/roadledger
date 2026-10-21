@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoadLedger</title>
+<style>
+  :root {
+    --bg: #fbfaf8; --panel: #ffffff; --ink: #1a1a1a; --muted: #6b6b6b;
+    --line: #e3e0da; --accent: #1f5c4d; --warn: #9a5b00; --urgent: #8c2f24;
+    --ok: #2f6b3a; --chip: #f1efea; --shadow: 0 1px 2px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141513; --panel: #1c1e1c; --ink: #ecebe7; --muted: #9b9b95;
+      --line: #2e312e; --accent: #6fbfa5; --warn: #e0a558;
+      --urgent: #e08478; --ok: #86c995; --chip: #262925;
+      --shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141513; --panel: #1c1e1c; --ink: #ecebe7; --muted: #9b9b95;
+    --line: #2e312e; --accent: #6fbfa5; --warn: #e0a558; --urgent: #e08478;
+    --ok: #86c995; --chip: #262925; --shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 16px 64px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 22px; }
+  h1 { font-size: 25px; margin: 0 0 4px; letter-spacing: -.015em; }
+  .tagline { color: var(--muted); font-size: 14px; margin: 0; }
+  .env { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .chip {
+    background: var(--chip); border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 11px; font-size: 12px; color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .chip strong { color: var(--ink); font-weight: 600; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 20px; }
+  select, button {
+    font: inherit; font-size: 14px; padding: 7px 13px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
+  button:disabled { opacity: .5; cursor: progress; }
+  button.mini { padding: 3px 9px; font-size: 12.5px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 10px; margin-bottom: 24px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; box-shadow: var(--shadow); }
+  .stat .n { font-size: 23px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .stat .k { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
+  section { margin-bottom: 30px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .note { font-size: 13px; color: var(--muted); margin: -4px 0 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--shadow); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 9px 12px; border-bottom: 1px solid var(--line); font-weight: 600; }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .pri { display: inline-block; min-width: 20px; text-align: center; border-radius: 5px; padding: 1px 6px; font-size: 12px; font-weight: 600; }
+  .pri1 { background: color-mix(in srgb, var(--urgent) 16%, transparent); color: var(--urgent); }
+  .pri2 { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+  .pri3 { background: var(--chip); color: var(--muted); }
+  .held { color: var(--warn); font-size: 13px; }
+  .dispatched { color: var(--ok); font-size: 13px; }
+  .reasons { margin: 5px 0 0; padding-left: 16px; font-size: 12.5px; color: var(--muted); }
+  .reasons li { margin: 1px 0; }
+  .views { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); }
+  svg { display: block; width: 100%; height: auto; }
+  .trace { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; padding: 14px; margin: 0; overflow-x: auto; white-space: pre; line-height: 1.6; }
+  .trace .rule { color: var(--accent); font-weight: 600; }
+  .trace .esc { color: var(--urgent); }
+  .trace .see { color: var(--muted); }
+  .rules { display: flex; flex-wrap: wrap; gap: 6px; }
+  .empty { padding: 18px; color: var(--muted); font-size: 14px; }
+  footer { border-top: 1px solid var(--line); padding-top: 16px; color: var(--muted); font-size: 12.5px; }
+  @media (max-width: 620px) { .hide-sm { display: none; } h1 { font-size: 21px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>RoadLedger</h1>
+    <p class="tagline">Road defects measured in square metres, with the evidence for every number.</p>
+    <div class="env" id="env"></div>
+  </header>
+
+  <div class="controls">
+    <select id="scenario"></select>
+    <button class="primary" id="run">Run analysis</button>
+    <button id="theme" title="Toggle theme">◐</button>
+    <span class="note" id="status" style="margin:0"></span>
+  </div>
+
+  <div class="grid" id="stats"></div>
+
+  <section>
+    <h2>Route plan</h2>
+    <p class="note">Measured defects against the ground truth of the simulated route. Circle area is proportional to measured defect area; crosses are the true positions.</p>
+    <div class="panel"><svg id="map" viewBox="0 0 1000 300" role="img" aria-label="Plan view of the route"></svg></div>
+  </section>
+
+  <section>
+    <h2>Defect ledger</h2>
+    <p class="note">A defect needing approval is not dispatched until someone approves it here. Priority 1 always requires approval, however well the views agreed.</p>
+    <div class="controls" style="margin-bottom:10px">
+      <label for="approver" style="font-size:13px;color:var(--muted)">Approving as</label>
+      <input id="approver" value="inspector" maxlength="120" aria-label="Approver name"
+             style="font:inherit;font-size:14px;padding:6px 11px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--ink);width:170px">
+    </div>
+    <div class="panel"><table>
+      <thead><tr>
+        <th>Class</th><th>Area</th><th class="hide-sm">Station</th><th>Views</th>
+        <th>Spread</th><th>Pri</th><th>Cost</th><th>Status</th>
+      </tr></thead>
+      <tbody id="ledger"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Agent decision trace</h2>
+    <p class="note">Every rule that fired, and the measured values that fired it. This is what shows the vision results changed what the system did next.</p>
+    <div class="rules" id="rules" style="margin-bottom:10px"></div>
+    <div class="panel"><pre class="trace" id="trace"></pre></div>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let current = null;
+
+const fmt = (v, d = 4) => (v === null || v === undefined ? "—" : Number(v).toFixed(d));
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+$("theme").onclick = () => {
+  const now = document.documentElement.getAttribute("data-theme");
+  const next = now === "dark" ? "light" : now === "light" ? "dark" : (matchMedia("(prefers-color-scheme: dark)").matches ? "light" : "dark");
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("rl-theme", next); } catch (e) {}
+};
+try { const t = localStorage.getItem("rl-theme"); if (t) document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+
+/* The Graviton worker is ephemeral by design: started for a run, stopped
+   afterwards, because leaving it up spends the budget on nothing. So the API
+   is usually not there, and a reviewer opening this page must still get a
+   complete run rather than an error.
+
+   Everything therefore falls back to a snapshot written to S3 at deploy time
+   and served alongside this page. The live API is tried first and takes over
+   the moment the worker is up; until then the page is fully usable and says
+   plainly that it is showing a snapshot. A demo that only works while a
+   compute hour is burning is not a demo. */
+let WORKER_UP = null;
+
+async function api(path, fallback, options) {
+  try {
+    const response = await fetch(path, options);
+    if (!response.ok) throw new Error(response.status);
+    WORKER_UP = true;
+    return await response.json();
+  } catch (e) {
+    if (!fallback) throw e;
+    WORKER_UP = false;
+    const snapshot = await fetch(fallback);
+    if (!snapshot.ok) throw e;
+    return await snapshot.json();
+  }
+}
+
+function noteSnapshot() {
+  if (WORKER_UP !== false) return;
+  const el = $("status");
+  if (el) {
+    el.textContent =
+      "showing a snapshot taken at deploy time \u2014 the Graviton worker is stopped, "
+      + "which is its normal state. Start it to run the pipeline live.";
+  }
+}
+
+async function loadHealth() {
+  const h = await api("/api/health", "/health.json");
+  const cool = h.is_cool_build
+    ? `<strong>COOL</strong> ${esc(h.cool_version)}`
+    : `pip wheel <span title="not the COOL build">(not COOL)</span>`;
+  $("env").innerHTML = [
+    `OpenCV <strong>${esc(h.opencv_version)}</strong>`,
+    cool,
+    `KleidiCV in build: <strong>${h.kleidicv_in_build ? "yes" : "no"}</strong>`,
+    `<strong>${esc(h.architecture)}</strong>`,
+    h.instance_type ? `<strong>${esc(h.instance_type)}</strong>` : "local",
+  ].map((t) => `<span class="chip">${t}</span>`).join("");
+  if (h.notes && h.notes.length) {
+    $("env").innerHTML += h.notes.map((n) => `<span class="chip" style="color:var(--warn)">${esc(n)}</span>`).join("");
+  }
+  const sel = $("scenario");
+  sel.innerHTML = Object.entries(h.scenarios).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
+}
+
+function renderStats(r) {
+  // Awaiting means undecided, not "the engine flagged it". A defect someone
+  // has already approved or rejected is no longer waiting on anyone.
+  const held = r.defects.filter((d) => d.needs_human_approval && !d.approval).length;
+  const decided = r.defects.filter((d) => d.approval).length;
+  const cells = [
+    [r.defects.length, "defects"],
+    [r.work_orders.length, "work orders"],
+    [held, "awaiting approval"],
+    [decided, "reviewed"],
+    [r.escalated.length, "escalated"],
+    [r.duplicates_merged, "duplicates merged"],
+    [`${r.total_cost.toLocaleString()} ${r.currency}`, "estimated repair"],
+    [r.tool_calls, "tool calls"],
+    [`${r.elapsed_ms} ms`, "analysis time"],
+  ];
+  $("stats").innerHTML = cells.map(([n, k]) => `<div class="stat"><div class="n">${esc(n)}</div><div class="k">${esc(k)}</div></div>`).join("");
+}
+
+function renderMap(r) {
+  const W = 1000, H = 300, padL = 54, padR = 20, padT = 24, padB = 34;
+  const stations = [...r.defects.map((d) => d.geo && d.geo.station_m), ...r.ground_truth.map((g) => g.station_m)].filter((v) => v != null);
+  const maxS = Math.max(14, ...stations) + 1.5;
+  const x = (s) => padL + (s / maxS) * (W - padL - padR);
+  const y = (lat) => padT + ((lat + 2.2) / 4.4) * (H - padT - padB);
+  const out = [];
+  out.push(`<rect x="${padL}" y="${y(-1.75)}" width="${W - padL - padR}" height="${y(1.75) - y(-1.75)}" fill="currentColor" opacity="0.045"/>`);
+  for (const lat of [-1.75, 0, 1.75]) {
+    out.push(`<line x1="${padL}" y1="${y(lat)}" x2="${W - padR}" y2="${y(lat)}" stroke="currentColor" opacity="${lat === 0 ? 0.25 : 0.4}" stroke-width="1.5" ${lat === 0 ? 'stroke-dasharray="14 10"' : ""}/>`);
+  }
+  for (let s = 0; s <= maxS; s += 2) {
+    out.push(`<line x1="${x(s)}" y1="${H - padB}" x2="${x(s)}" y2="${H - padB + 5}" stroke="currentColor" opacity="0.35"/>`);
+    out.push(`<text x="${x(s)}" y="${H - padB + 19}" font-size="11" fill="currentColor" opacity="0.55" text-anchor="middle">${s} m</text>`);
+  }
+  out.push(`<text x="${padL - 8}" y="${y(0) + 4}" font-size="11" fill="currentColor" opacity="0.55" text-anchor="end">lane</text>`);
+  for (const g of r.ground_truth) {
+    const cx = x(g.station_m), cy = y(g.lateral_m), s = 5;
+    out.push(`<g stroke="currentColor" opacity="0.5" stroke-width="1.6"><line x1="${cx - s}" y1="${cy - s}" x2="${cx + s}" y2="${cy + s}"/><line x1="${cx - s}" y1="${cy + s}" x2="${cx + s}" y2="${cy - s}"/></g>`);
+    out.push(`<title>truth: ${esc(g.kind)}${g.area_m2 ? " " + g.area_m2 + " m²" : ""}</title>`);
+  }
+  for (const d of r.defects) {
+    if (!d.geo) continue;
+    const col = d.priority === 1 ? "var(--urgent)" : d.priority === 2 ? "var(--warn)" : "var(--muted)";
+    const rad = Math.max(5, Math.sqrt(Math.max(d.area_m2, 0.001) / Math.PI) * 190);
+    out.push(`<circle cx="${x(d.geo.station_m)}" cy="${y(d.geo.lateral_m)}" r="${rad}" fill="${col}" fill-opacity="0.22" stroke="${col}" stroke-width="2"><title>${esc(d.label)} ${fmt(d.area_m2)} m² at station ${fmt(d.geo.station_m, 2)} m</title></circle>`);
+  }
+  $("map").innerHTML = out.join("");
+}
+
+function renderLedger(r) {
+  if (!r.defects.length) {
+    $("ledger").innerHTML = `<tr><td colspan="8" class="empty">No defects recorded. For the confusers-only scenario that is the correct result: a shadow and standing water are not pavement damage.</td></tr>`;
+    return;
+  }
+  $("ledger").innerHTML = r.defects.map((d) => {
+    const spread = d.area_iqr_ratio < 0 ? `<span title="could not be established">not established</span>` : `${(d.area_iqr_ratio * 100).toFixed(1)}%`;
+    const views = (d.measurements || []).filter((m) => m.measurable).map((m) => fmt(m.area_m2, 3)).join("  ");
+    const approved = d.approval && d.approval.approved;
+    const dispatched = r.work_orders.includes(d.defect_id);
+    let status;
+    if (d.approval) {
+      status = approved
+        ? `<span class="dispatched">approved by ${esc(d.approval.approver)}</span>`
+        : `<span class="held">rejected by ${esc(d.approval.approver)}</span>`;
+    } else if (d.needs_human_approval) {
+      status = `<span class="held">held</span><br>
+        <button class="mini" onclick="approve('${d.defect_id}',true)">Approve</button>
+        <button class="mini" onclick="approve('${d.defect_id}',false)">Reject</button>`;
+    } else {
+      status = dispatched ? `<span class="dispatched">dispatched</span>` : `<span class="held">recorded</span>`;
+    }
+    return `<tr>
+      <td><strong>${esc(d.label)}</strong><br><span class="views" title="confidence">${(d.class_confidence * 100).toFixed(0)}% conf</span></td>
+      <td class="num"><strong>${fmt(d.area_m2)}</strong> m²${views ? `<br><span class="views" title="per-view measurements">${esc(views)}</span>` : ""}</td>
+      <td class="num hide-sm">${d.geo ? fmt(d.geo.station_m, 2) + " m" : "—"}</td>
+      <td class="num">${d.n_measurements}</td>
+      <td class="num">${spread}</td>
+      <td><span class="pri pri${d.priority}">${d.priority}</span></td>
+      <td class="num">${d.billable ? d.cost_estimate.toLocaleString() + " " + r.currency : "—"}</td>
+      <td>${status}${d.reasons && d.reasons.length ? `<ul class="reasons">${d.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderTrace(r) {
+  $("rules").innerHTML = r.rules_fired.map((x) => `<span class="chip">${esc(x)}</span>`).join("");
+  $("trace").innerHTML = r.trace_lines.map((line) => {
+    const cls = line.includes(">>>") ? "rule" : line.includes("!!!") ? "esc" : "see";
+    return `<span class="${cls}">${esc(line)}</span>`;
+  }).join("\n");
+}
+
+function render(r) {
+  current = r;
+  renderStats(r); renderMap(r); renderLedger(r); renderTrace(r);
+  $("status").textContent = r.cached ? "cached run" : "live run";
+  $("footer").innerHTML = `Scenario: ${esc(r.scenario_label)} · ${r.frames} frames ·
+    privacy: ${r.privacy.faces_blurred} faces and ${r.privacy.plates_blurred} plates blurred before storage ·
+    ${r.frames_skipped.length} frames skipped for untrustworthy geometry.
+    Areas are measured, not estimated; every one carries the spread across independent views.`;
+}
+
+async function approve(defectId, ok) {
+  // An inline field rather than prompt(): a modal dialog is suppressed in
+  // embedded and automated browsers, which would make the approval gate look
+  // broken to a reviewer, and it loses the approver between decisions.
+  const approver = ($("approver").value || "").trim() || "unattributed";
+  $("status").textContent = (ok ? "approving" : "rejecting") + " as " + approver + "…";
+  const res = await fetch(`/api/runs/${current.run_id}/defects/${defectId}/approval`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ approved: ok, approver, note: "" }),
+  });
+  if (!res.ok) { $("status").textContent = "approval failed"; return; }
+  const refreshed = await (await fetch(`/api/runs/${current.run_id}`)).json();
+  refreshed.cached = current.cached;
+  render(refreshed);
+  $("status").textContent = (ok ? "approved" : "rejected") + " by " + approver;
+}
+
+$("run").onclick = async () => {
+  const btn = $("run"); btn.disabled = true;
+  $("status").textContent = "running the pipeline and the agent loop…";
+  try {
+    const res = await fetch("/api/runs", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scenario: $("scenario").value, max_frames: 5 }),
+    });
+    render(await res.json());
+  } catch (e) {
+    $("status").textContent = "run failed: " + e;
+  } finally { btn.disabled = false; }
+};
+
+(async () => {
+  await loadHealth();
+  $("status").textContent = "loading cached run\u2026";
+  render(await api("/api/demo", "/demo.json"));
+  noteSnapshot();
+})();
+</script>
+</body>
+</html>

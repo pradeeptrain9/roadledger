@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RoadLedger Capture</title>
+<style>
+  :root{
+    --bg:#0d1014; --panel:#161b22; --panel2:#1c232c; --line:#2a333f;
+    --ink:#e6edf3; --dim:#8b98a5; --accent:#4fc3f7;
+    --ok:#3fb950; --warn:#d29922; --bad:#f85149; --prov:#8b98a5;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+  .wrap{max-width:560px;margin:0 auto;padding:14px 16px 28px}
+  h1{font-size:17px;margin:4px 0 2px;letter-spacing:.2px}
+  h1 small{color:var(--dim);font-weight:400;font-size:12px;display:block;margin-top:3px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.9px;color:var(--dim);
+     margin:20px 0 8px;font-weight:600}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px;margin:10px 0}
+  label{display:block;font-size:12px;color:var(--dim);margin:10px 0 4px}
+  input,select{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:9px;padding:11px 12px;font-size:16px}
+  button{width:100%;background:var(--accent);color:#06243a;border:0;border-radius:10px;
+    padding:14px;font-size:16px;font-weight:650;margin-top:12px}
+  button.sec{background:var(--panel2);color:var(--ink);border:1px solid var(--line);font-weight:500}
+  button:disabled{opacity:.4}
+  .row{display:flex;gap:9px}.row>*{flex:1}
+  .hint{font-size:12px;color:var(--dim);margin:7px 0 0}
+  .stage{position:relative;background:#000;border-radius:11px;overflow:hidden;
+    border:1px solid var(--line);touch-action:none}
+  video,canvas.view{display:block;width:100%;height:auto}
+  canvas.ov{position:absolute;inset:0;width:100%;height:100%}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0}
+  .chip{font-size:11px;padding:4px 9px;border-radius:999px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .chip b{color:var(--ink);font-weight:600}
+  .chip.ok{border-color:#1d4429;color:#7ee291}.chip.warn{border-color:#5a4412;color:#e3b341}
+  .chip.bad{border-color:#5c1f1b;color:#ff8178}
+  .banner{border-radius:10px;padding:11px 12px;font-size:13px;margin:10px 0;display:none}
+  .banner.show{display:block}
+  .banner.warn{background:#2a2110;border:1px solid #5a4412;color:#e3b341}
+  .banner.bad{background:#2a1513;border:1px solid #5c1f1b;color:#ff8178}
+  .d{border:1px solid var(--line);border-left-width:4px;border-radius:10px;
+     background:var(--panel2);padding:11px;margin:8px 0}
+  .d.p1{border-left-color:var(--bad)}.d.p2{border-left-color:var(--warn)}
+  .d.p3{border-left-color:var(--dim)}.d.prov{border-left-color:var(--prov);opacity:.72}
+  .d .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .d .area{font-size:21px;font-weight:700;font-variant-numeric:tabular-nums}
+  .d .lbl{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.7px}
+  .d .meta{font-size:11px;color:var(--dim);margin-top:5px;line-height:1.5}
+  .d .why{font-size:11px;color:var(--warn);margin-top:6px;line-height:1.5}
+  .d img{width:100%;border-radius:7px;margin-top:8px;border:1px solid var(--line)}
+  .d .act{display:flex;gap:7px;margin-top:9px}
+  .d .act input{flex:2;font-size:14px;padding:9px}
+  .d .act button{flex:1;margin:0;padding:9px;font-size:13px}
+  .big{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:12px;margin-top:4px}
+  .kv span:nth-child(odd){color:var(--dim)}
+  .kv span:nth-child(even){font-variant-numeric:tabular-nums}
+  .screen{display:none}.screen.on{display:block}
+  .step{font-size:12px;color:var(--accent);font-weight:600;margin-bottom:3px}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>RoadLedger <small>Measure road defects while you drive. Areas in m&sup2;, with the evidence behind each one.</small></h1>
+
+  <div id="bInsecure" class="banner bad"></div>
+
+  <!-- ================= SETUP ================= -->
+  <section id="sSetup" class="screen on">
+    <div class="card">
+      <div class="step">Step 1 of 3 &middot; Mount and measure</div>
+      <p class="hint">Mount the phone so it looks down the road and <b>will not move again</b> &mdash;
+      the whole measurement is scaled by where this camera is. Then measure the
+      <b>lens height above the road</b> with a tape. A 5% error here makes every area 10% wrong,
+      because area scales as the square of it.</p>
+      <label for="h">Lens height above the road (metres)</label>
+      <input id="h" type="number" step="0.01" min="0.3" max="4" placeholder="1.27" inputmode="decimal">
+      <button id="bCam">Turn on the camera</button>
+      <p class="hint" id="camNote"></p>
+    </div>
+  </section>
+
+  <!-- ================= CALIBRATE ================= -->
+  <section id="sCal" class="screen">
+    <div class="card">
+      <div class="step">Step 2 of 3 &middot; Point at the horizon, tap one marker</div>
+      <p class="hint" id="calWhat">Loading camera&hellip;</p>
+      <div class="stage">
+        <canvas id="still" class="view"></canvas>
+        <canvas id="calOv" class="ov"></canvas>
+      </div>
+      <div class="chips">
+        <span class="chip">horizon row <b id="cHz">&mdash;</b></span>
+        <span class="chip">marker row <b id="cMk">&mdash;</b></span>
+        <span class="chip">frame <b id="cSz">&mdash;</b></span>
+      </div>
+      <label for="md">Distance from the lens to that marker, along the road (metres)</label>
+      <input id="md" type="number" step="0.05" min="0.5" max="60" placeholder="5.00" inputmode="decimal">
+      <div class="row">
+        <button class="sec" id="bRefreeze">New still</button>
+        <button class="sec" id="bMode">Move marker</button>
+      </div>
+      <button id="bSolve" disabled>Solve and start capture</button>
+      <div id="bCal" class="banner warn"></div>
+      <div id="calOut" style="display:none">
+        <h2>Solved geometry</h2>
+        <div class="kv" id="calKv"></div>
+        <p class="hint" id="calCheck"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CAPTURE ================= -->
+  <section id="sRun" class="screen">
+    <div class="card">
+      <div class="step">Step 3 of 3 &middot; Drive</div>
+      <div class="stage">
+        <video id="vid" playsinline muted autoplay></video>
+        <canvas id="plan" class="ov"></canvas>
+      </div>
+      <div class="chips" id="runChips"></div>
+      <div id="bSpeed" class="banner warn"></div>
+      <div id="bGps" class="banner warn"></div>
+      <div class="row">
+        <button id="bStart">Start measuring</button>
+        <button class="sec" id="bStop" disabled>Stop</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <div class="lbl" style="font-size:11px;color:var(--dim);letter-spacing:.7px">CONFIRMED</div>
+          <div class="big" id="nConf">0</div>
+        </div>
+        <div>
+          <div class="lbl" style="font-size:11px;color:var(--dim);letter-spacing:.7px">REPAIR COST</div>
+          <div class="big" id="nCost">0</div>
+        </div>
+      </div>
+      <div class="kv" id="statKv"></div>
+    </div>
+
+    <h2>Found on this drive</h2>
+    <div id="list"></div>
+    <div class="card" id="exp" style="display:none">
+      <button class="sec" id="bGeo">Download work order (GeoJSON)</button>
+      <button class="sec" id="bFinish">Finish drive</button>
+      <p class="hint">Finishing closes every defect still in view and records it. A defect
+      seen fewer than three times is kept, marked unconfirmed, and not costed.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ *
+ * The phone is a sensor. Every number shown here was computed on the
+ * server by the OpenCV pipeline; nothing is measured in this file.
+ * What this file does decide is the capture *rate*, and it takes that
+ * from the server, which derives it from the vehicle's own speed.
+ * ------------------------------------------------------------------ */
+
+/* Frame width sent to the server. Measured, not chosen.
+ *
+ * Resolution does not just sharpen the boundary, it decides whether a defect
+ * can be confirmed at all. A measurement is only accepted once the defect's
+ * footprint in the source frame clears a floor, and that footprint falls as
+ * the square of the upload width - so halving the width quarters it and
+ * collapses the band of road over which a defect is measurable. One synthetic
+ * drive past two potholes and a shadow, at 22 km/h, through the real endpoint
+ * (scripts/simulate_phone.py):
+ *
+ *    width   views per defect   confirmed   spread on the larger pothole
+ *     640           2              0 of 3    could not be established
+ *     800           3              1 of 3    3.7%
+ *     960           3              1 of 3    2.8%
+ *    1280           5              3 of 3    0.9%
+ *
+ * 1280 costs about 40 KB a frame, so roughly 200 KB/s at five frames a
+ * second - inside what mobile data carries, and the only setting here that
+ * confirms anything reliably. Lowering it to save bandwidth does not give a
+ * rougher measurement, it gives none. */
+const UPLOAD_W = 1280;
+/* JPEG quality. Swept from 30 to 70 at 1280 px wide: the measured areas moved
+ * by less than the run-to-run variation, so fidelity is not what limits this -
+ * resolution is. 0.5 halves the bytes against 0.7 for nothing measurable. */
+const JPEG_Q   = 0.50;
+const API = "";
+
+const $ = id => document.getElementById(id);
+const show = id => document.querySelectorAll(".screen")
+  .forEach(s => s.classList.toggle("on", s.id === id));
+const banner = (id, msg, kind) => {
+  const el = $(id); el.textContent = msg || "";
+  el.className = "banner " + (kind || "warn") + (msg ? " show" : "");
+};
+
+let stream = null, runId = null, running = false, seq = 0;
+let fix = null, geoWatch = null, wakeLock = null;
+let calib = {horizon: null, marker: null, mode: "horizon", w: 0, h: 0};
+const defects = new Map();
+let advice = {recommended_interval_s: 0.5};
+
+/* getUserMedia and the Geolocation API both require a secure origin.
+   Saying so up front is far kinder than a permission prompt that never
+   appears. */
+if (!window.isSecureContext) {
+  banner("bInsecure",
+    "This page is not on a secure origin, so the browser will not give it the camera or GPS. "
+    + "Open it over HTTPS, or via http://localhost on the same device.", "bad");
+}
+
+/* ---------------- camera ---------------- */
+
+$("bCam").onclick = async () => {
+  const h = parseFloat($("h").value);
+  if (!(h > 0.3 && h < 4)) {
+    $("camNote").textContent = "Enter the lens height in metres first (a car dashboard is near 1.2-1.4 m).";
+    return;
+  }
+  $("camNote").textContent = "Asking for the camera and your location…";
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {facingMode: {ideal: "environment"},
+              width: {ideal: 1280}, height: {ideal: 720}},
+      audio: false
+    });
+  } catch (e) {
+    $("camNote").textContent = "The camera was refused or is unavailable: " + e.message;
+    return;
+  }
+  $("vid").srcObject = stream;
+  await $("vid").play().catch(() => {});
+  startGeo();
+  show("sCal");
+  freeze();
+};
+
+function startGeo() {
+  if (!navigator.geolocation) {
+    banner("bGps", "This browser reports no Geolocation support, so defects cannot be placed on a map. "
+      + "Areas are still measured — they do not depend on GPS.", "warn");
+    return;
+  }
+  geoWatch = navigator.geolocation.watchPosition(p => {
+    fix = {
+      lat: p.coords.latitude, lon: p.coords.longitude,
+      accuracy_m: p.coords.accuracy ?? 30,
+      heading_deg: Number.isFinite(p.coords.heading) ? p.coords.heading : null,
+      speed_mps: Number.isFinite(p.coords.speed) ? p.coords.speed : null,
+      t: p.timestamp / 1000
+    };
+  }, err => {
+    banner("bGps", "Location unavailable (" + err.message + "). Areas are still measured; "
+      + "defects just cannot be placed.", "warn");
+  }, {enableHighAccuracy: true, maximumAge: 1000, timeout: 15000});
+}
+
+/* ---------------- calibration ---------------- */
+
+function grabFrame(canvas) {
+  const v = $("vid");
+  const vw = v.videoWidth, vh = v.videoHeight;
+  if (!vw) return false;
+  const w = UPLOAD_W, h = Math.round(vh * UPLOAD_W / vw);
+  canvas.width = w; canvas.height = h;
+  canvas.getContext("2d").drawImage(v, 0, 0, w, h);
+  return true;
+}
+
+function freeze() {
+  if (!grabFrame($("still"))) { setTimeout(freeze, 150); return; }
+  calib.w = $("still").width; calib.h = $("still").height;
+  // Sensible starting guesses, so the operator adjusts rather than hunts:
+  // the horizon of a level-ish mount sits a little above centre, and a
+  // marker a few metres ahead sits well down the frame.
+  calib.horizon = Math.round(calib.h * 0.46);
+  calib.marker  = Math.round(calib.h * 0.80);
+  calib.mode = "horizon";
+  $("cSz").textContent = calib.w + "×" + calib.h;
+  $("calWhat").innerHTML = "Drag the <b>cyan line</b> onto the real horizon — where the "
+    + "road surface meets the distance. Then tap <b>Move marker</b> and drag the "
+    + "<b>amber line</b> onto the point where an object touches the road at a distance "
+    + "you have measured.";
+  drawCal();
+}
+
+$("bRefreeze").onclick = freeze;
+$("bMode").onclick = () => {
+  calib.mode = calib.mode === "horizon" ? "marker" : "horizon";
+  $("bMode").textContent = calib.mode === "horizon" ? "Move marker" : "Move horizon";
+  drawCal();
+};
+
+function drawCal() {
+  const c = $("calOv");
+  c.width = calib.w; c.height = calib.h;
+  const g = c.getContext("2d");
+  g.clearRect(0, 0, c.width, c.height);
+  const line = (y, col, text, active) => {
+    g.strokeStyle = col; g.lineWidth = active ? 3 : 2;
+    g.setLineDash(active ? [] : [7, 6]);
+    g.beginPath(); g.moveTo(0, y); g.lineTo(c.width, y); g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = col; g.font = "600 13px -apple-system,sans-serif";
+    g.fillText(text, 8, y - 7);
+    // A grab handle, so it is obvious the line can be moved.
+    g.beginPath(); g.arc(c.width - 22, y, active ? 11 : 8, 0, 6.3); g.fill();
+  };
+  line(calib.horizon, "#4fc3f7", "horizon  y=" + calib.horizon, calib.mode === "horizon");
+  line(calib.marker,  "#d29922", "marker  y=" + calib.marker,  calib.mode === "marker");
+  $("cHz").textContent = calib.horizon;
+  $("cMk").textContent = calib.marker;
+  validate();
+}
+
+function dragTo(ev) {
+  const c = $("calOv"), r = c.getBoundingClientRect();
+  const pt = ev.touches ? ev.touches[0] : ev;
+  const y = Math.round((pt.clientY - r.top) / r.height * c.height);
+  const clamped = Math.max(0, Math.min(c.height - 1, y));
+  if (calib.mode === "horizon") calib.horizon = clamped; else calib.marker = clamped;
+  drawCal();
+}
+let dragging = false;
+const ov = $("calOv");
+["mousedown", "touchstart"].forEach(e => ov.addEventListener(e, ev => {
+  dragging = true; dragTo(ev); ev.preventDefault();
+}, {passive: false}));
+["mousemove", "touchmove"].forEach(e => ov.addEventListener(e, ev => {
+  if (dragging) { dragTo(ev); ev.preventDefault(); }
+}, {passive: false}));
+["mouseup", "touchend", "mouseleave"].forEach(e =>
+  ov.addEventListener(e, () => { dragging = false; }));
+
+$("md").oninput = validate;
+
+function validate() {
+  const d = parseFloat($("md").value);
+  const ok = calib.marker > calib.horizon && d > 0.5;
+  $("bSolve").disabled = !ok;
+  if (calib.marker <= calib.horizon) {
+    banner("bCal", "The marker is at or above the horizon. A point on the road is always "
+      + "below it, so one of the two lines is misplaced.", "bad");
+  } else { banner("bCal", ""); }
+}
+
+$("bSolve").onclick = async () => {
+  $("bSolve").disabled = true;
+  const body = {
+    calibration: {
+      height_m: parseFloat($("h").value),
+      horizon_px: calib.horizon,
+      marker_distance_m: parseFloat($("md").value),
+      marker_row_px: calib.marker,
+      image_height_px: calib.h
+    },
+    label: "phone capture",
+    privacy: true
+  };
+  let r;
+  try {
+    r = await fetch(API + "/api/live/sessions",
+      {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  } catch (e) {
+    banner("bCal", "Could not reach the server: " + e.message, "bad");
+    $("bSolve").disabled = false; return;
+  }
+  const j = await r.json();
+  if (!r.ok) {
+    banner("bCal", (j.detail || "the calibration was refused"), "bad");
+    $("bSolve").disabled = false; return;
+  }
+  runId = j.run_id; advice = j.capture;
+  const c = j.calibration;
+  $("calOut").style.display = "block";
+  $("calKv").innerHTML = [
+    ["camera height", c.height_m + " m"],
+    ["vertical field of view", c.vfov_deg + "°"],
+    ["downward tilt", c.pitch_deg + "°"],
+    ["focal length", c.focal_px + " px"],
+    ["horizon row", c.horizon_px + " px"]
+  ].map(([k, v]) => "<span>" + k + "</span><span>" + v + "</span>").join("");
+  $("calCheck").innerHTML = "Sanity check — the solution says the road is at these rows: "
+    + j.reprojection_check.map(x => x.distance_m + " m → y=" + x.row_px).join(", ")
+    + ". If 10 m lands somewhere obviously wrong in the frame, redo the calibration.";
+  if (j.calibration_warnings.length) {
+    banner("bCal", j.calibration_warnings.join(" — "), "warn");
+  } else { banner("bCal", ""); }
+  show("sRun");
+  $("exp").style.display = "block";
+  drawPlan();
+};
+
+/* ---------------- capture loop ---------------- */
+
+$("bStart").onclick = async () => {
+  if (!fix) {
+    banner("bGps", "Waiting for a first GPS fix. Areas would still be measured, but nothing "
+      + "could be placed on a map, so capture waits a moment.", "warn");
+    return;
+  }
+  running = true; $("bStart").disabled = true; $("bStop").disabled = false;
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+  loop();
+};
+
+$("bStop").onclick = () => {
+  running = false; $("bStart").disabled = false; $("bStop").disabled = true;
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+};
+
+const work = document.createElement("canvas");
+
+async function loop() {
+  while (running) {
+    const t0 = performance.now();
+    let payload;
+    try { payload = await sendFrame(); }
+    catch (e) { banner("bGps", "Upload failed: " + e.message, "bad"); await sleep(600); continue; }
+    if (payload) render(payload);
+    // Pace to the interval the server asked for, less the time already spent.
+    const wait = (advice.recommended_interval_s || 0.5) * 1000 - (performance.now() - t0);
+    if (wait > 0) await sleep(wait);
+  }
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function sendFrame() {
+  if (!grabFrame(work) || !fix) return Promise.resolve(null);
+  const b64 = work.toDataURL("image/jpeg", JPEG_Q).split(",")[1];
+  return fetch(API + "/api/live/sessions/" + runId + "/frames", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      seq: seq++, jpeg_b64: b64,
+      lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m,
+      heading_deg: fix.heading_deg, speed_mps: fix.speed_mps, t: fix.t
+    })
+  }).then(r => r.json());
+}
+
+/* ---------------- rendering ---------------- */
+
+function render(p) {
+  if (p.capture) advice = p.capture;
+  const s = p.stats || {};
+
+  const chips = [];
+  const chip = (t, k) => chips.push('<span class="chip ' + (k || "") + '">' + t + "</span>");
+  if (p.type === "dropped") {
+    chip("frame dropped — server still busy", "warn");
+  } else if (p.accepted === false) {
+    chip("frame unused: " + (p.reason || "").slice(0, 60), "warn");
+  } else {
+    chip("road plane <b>" + (p.rectification_quality ?? 0).toFixed(2) + "</b>",
+         p.rectification_quality >= 0.5 ? "ok" : "warn");
+    chip("step <b>" + (p.step_m ?? 0).toFixed(2) + " m</b> (" + (p.step_source || "?") + ")");
+    chip("<b>" + Math.round(p.processing_ms || 0) + " ms</b>/frame");
+  }
+  const sp = fix && fix.speed_mps != null ? (fix.speed_mps * 3.6) : null;
+  chip("speed <b>" + (sp == null ? "—" : sp.toFixed(0) + " km/h") + "</b>");
+  chip("GPS ±<b>" + (fix ? Math.round(fix.accuracy_m) : "—") + " m</b>",
+       fix && fix.accuracy_m <= 10 ? "ok" : "warn");
+  chip("sending <b>" + (advice.recommended_fps ?? 0).toFixed(1) + " fps</b>");
+  $("runChips").innerHTML = chips.join("");
+
+  banner("bSpeed", advice.too_fast_to_measure ? advice.note : "", "warn");
+
+  $("nConf").textContent = s.defects_confirmed ?? 0;
+  $("nCost").textContent = Math.round(s.total_cost ?? 0).toLocaleString();
+  $("statKv").innerHTML = [
+    ["frames measured", (s.frames_measured ?? 0) + " of " + (s.frames_received ?? 0)],
+    ["measured rate", (s.measured_fps ?? 0) + " fps"],
+    ["distance covered", (s.distance_m ?? 0) + " m"],
+    ["dropped, server busy", s.frames_dropped_behind ?? 0],
+    ["unused: too blurry", s.frames_skipped_blurry ?? 0],
+    ["unused: no road plane", s.frames_skipped_unrectifiable ?? 0],
+    ["awaiting approval", s.defects_needing_approval ?? 0],
+    ["currency", s.currency ?? ""]
+  ].map(([k, v]) => "<span>" + k + "</span><span>" + v + "</span>").join("");
+
+  (p.events || []).forEach(e => { defects.set(e.defect_id, e); });
+  if ((p.events || []).length) drawList();
+  drawPlan();
+}
+
+function drawList() {
+  const items = [...defects.values()].sort((a, b) =>
+    (a.confirmed === b.confirmed ? 0 : a.confirmed ? -1 : 1)
+    || a.priority - b.priority || b.area_m2 - a.area_m2);
+  $("list").innerHTML = items.map(card).join("") || "";
+}
+
+function card(e) {
+  const cls = e.confirmed ? "p" + e.priority : "prov";
+  const spread = e.area_iqr_ratio >= 0
+    ? "views agree to " + (100 * e.area_iqr_ratio).toFixed(0) + "% of the median"
+    : "spread not yet established";
+  const pos = e.position
+    ? e.position.lat.toFixed(5) + ", " + e.position.lon.toFixed(5)
+      + " ±" + Math.round(e.position.accuracy_m) + " m (" + e.position.method + ")"
+    : "not located";
+  const state = e.confirmed
+    ? (e.closed ? "final" : "confirmed, still in view")
+    : "provisional — " + e.n_views + " view" + (e.n_views === 1 ? "" : "s");
+  return '<div class="d ' + cls + '" data-id="' + e.defect_id + '">'
+    + '<div class="top"><span class="area">' + e.area_m2.toFixed(3) + ' m&sup2;</span>'
+    + '<span class="lbl">' + e.label + " &middot; p" + e.priority + "</span></div>"
+    + '<div class="meta">' + state + " &middot; " + e.n_views + " view"
+    + (e.n_views === 1 ? "" : "s") + " &middot; " + spread
+    + " &middot; class " + (100 * e.class_confidence).toFixed(0) + "%<br>" + pos
+    + (e.cost_estimate ? " &middot; est. " + Math.round(e.cost_estimate).toLocaleString()
+       + " " + e.currency : "")
+    + (e.revisit_candidates && e.revisit_candidates.length
+       ? "<br>possible revisit of a defect recorded earlier, "
+         + e.revisit_candidates[0].distance_m + " m away" : "")
+    + "</div>"
+    + (e.reasons && e.reasons.length ? '<div class="why">' + e.reasons.join("<br>") + "</div>" : "")
+    + (e.has_crop ? '<img loading="lazy" src="' + API + "/api/live/sessions/" + runId
+        + "/defects/" + e.defect_id + '/crop" alt="measured outline">' : "")
+    + (e.needs_human_approval && !e.approval
+        ? '<div class="act"><input placeholder="your name" id="ap_' + e.defect_id + '">'
+          + '<button onclick="approve(\'' + e.defect_id + '\',true)">Approve</button>'
+          + '<button class="sec" onclick="approve(\'' + e.defect_id + '\',false)">Reject</button></div>'
+        : e.approval
+          ? '<div class="meta">' + (e.approval.approved ? "approved" : "rejected") + " by "
+            + e.approval.approver + "</div>"
+          : "")
+    + "</div>";
+}
+
+window.approve = async (id, ok) => {
+  const el = $("ap_" + id);
+  const r = await fetch(API + "/api/live/sessions/" + runId + "/defects/" + id + "/approval", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({approved: ok, approver: (el && el.value) || "", note: ""})
+  });
+  const j = await r.json();
+  const d = defects.get(id);
+  if (d) { d.approval = j.approval; defects.set(id, d); drawList(); }
+};
+
+/* A plan view rather than a map. It needs no tiles, no API key and no network,
+   it works with GPS switched off, and while driving it answers the question the
+   driver actually has: what is ahead of me, and how far. The dispatchable
+   latitude and longitude are in the cards and in the GeoJSON export. */
+function drawPlan() {
+  const c = $("plan"), v = $("vid");
+  c.width = v.videoWidth ? UPLOAD_W : 640;
+  c.height = v.videoHeight ? Math.round(v.videoHeight * UPLOAD_W / v.videoWidth) : 360;
+  const g = c.getContext("2d");
+  g.clearRect(0, 0, c.width, c.height);
+
+  const W = Math.min(150, c.width * 0.34), H = Math.min(190, c.height * 0.84);
+  const x0 = c.width - W - 10, y0 = 10;
+  const AHEAD = 16, ACROSS = 7;             // metres shown
+  g.fillStyle = "rgba(13,16,20,.74)";
+  g.strokeStyle = "#2a333f"; g.lineWidth = 1;
+  g.beginPath(); g.roundRect(x0, y0, W, H, 9); g.fill(); g.stroke();
+
+  const px = (lat, ahead) => [
+    x0 + W / 2 + (lat / ACROSS) * W,
+    y0 + H - (ahead / AHEAD) * H
+  ];
+  // Distance rules, so a blob's position is readable rather than decorative.
+  g.font = "9px -apple-system,sans-serif";
+  for (let d = 5; d <= 15; d += 5) {
+    const [, y] = px(0, d);
+    g.strokeStyle = "#232c37"; g.beginPath(); g.moveTo(x0 + 4, y); g.lineTo(x0 + W - 4, y); g.stroke();
+    g.fillStyle = "#6c7a89"; g.fillText(d + " m", x0 + 6, y - 2);
+  }
+  // The vehicle.
+  g.fillStyle = "#4fc3f7";
+  const [cx, cy] = px(0, 0);
+  g.beginPath(); g.moveTo(cx, cy - 9); g.lineTo(cx - 5, cy + 2); g.lineTo(cx + 5, cy + 2); g.closePath(); g.fill();
+
+  for (const e of defects.values()) {
+    if (!e.position || e.closed) continue;
+    const a = e.position.ahead_m, l = e.position.lateral_m;
+    if (a < 0 || a > AHEAD || Math.abs(l) > ACROSS / 2) continue;
+    const [x, y] = px(l, a);
+    const r = Math.max(3.5, Math.min(13, Math.sqrt(e.area_m2 / Math.PI) / ACROSS * W * 2));
+    g.fillStyle = !e.confirmed ? "rgba(139,152,165,.65)"
+      : e.priority === 1 ? "rgba(248,81,73,.88)"
+      : e.priority === 2 ? "rgba(210,153,34,.88)" : "rgba(139,152,165,.8)";
+    g.beginPath(); g.arc(x, y, r, 0, 6.3); g.fill();
+    g.strokeStyle = "rgba(230,237,243,.8)"; g.lineWidth = 1; g.stroke();
+  }
+}
+
+/* ---------------- export and finish ---------------- */
+
+$("bGeo").onclick = async () => {
+  const r = await fetch(API + "/api/live/sessions/" + runId + "/geojson");
+  const blob = new Blob([JSON.stringify(await r.json(), null, 2)], {type: "application/geo+json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "roadledger_" + runId + ".geojson";
+  a.click();
+};
+
+$("bFinish").onclick = async () => {
+  running = false; $("bStart").disabled = false; $("bStop").disabled = true;
+  const r = await fetch(API + "/api/live/sessions/" + runId + "/finish", {method: "POST"});
+  const j = await r.json();
+  (j.closing_events || []).forEach(e => defects.set(e.defect_id, e));
+  (j.defects || []).forEach(e => defects.set(e.defect_id, e));
+  drawList(); drawPlan();
+  render({stats: j.stats, capture: advice, events: []});
+};
+</script>
+</body>
+</html>

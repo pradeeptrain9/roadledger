@@ -1,0 +1,24 @@
+# Pinned, per the submission requirements.
+#
+# opencv-python-headless 5.0.0.93 is the OpenCV 5 release. On arm64 this wheel
+# already bundles KleidiCV (Custom HAL: KleidiCV ver 26.03), which is why the
+# COOL benchmark measures it as a separate arm from COOL itself - see
+# docs/cool-benchmark.md.
+#
+# On the COOL Marketplace AMI, do NOT pip install opencv here: activate the
+# COOL environment instead, which provides its own cv2.
+#   source /opt/cool/venvs/python_3.12/bin/activate
+opencv-python-headless==5.0.0.93
+numpy==2.2.6
+
+# Tests
+pytest==8.3.4
+
+# The agent's language-model driver. Optional: the deterministic policy driver
+# runs without it, which is what the evaluation uses.
+boto3==1.35.76
+
+# The web API.
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.4
