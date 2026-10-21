@@ -19,13 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-Third-party data and models, neither of which is redistributed here:
-
-* RDD2022 road damage dataset - CC BY 4.0. Fetched by scripts/fetch_rdd2022.py.
-  Arya et al., "RDD2022: A multi-national image dataset for automatic road
-  damage detection", Geoscience Data Journal 11(4), 2024.
-* YuNet face detector - OpenCV Zoo, Apache 2.0. Fetched by
-  scripts/fetch_models.sh.

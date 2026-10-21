@@ -1,0 +1,7 @@
+Third-party data and models used by RoadLedger.
+Neither is redistributed in this repository; both are fetched by script.
+* RDD2022 road damage dataset - CC BY 4.0. Fetched by scripts/fetch_rdd2022.py.
+  Arya et al., "RDD2022: A multi-national image dataset for automatic road
+  damage detection", Geoscience Data Journal 11(4), 2024.
+* YuNet face detector - OpenCV Zoo, Apache 2.0. Fetched by
+  scripts/fetch_models.sh.
