@@ -220,6 +220,17 @@ Stated plainly, and in more detail in [docs/accuracy.md](docs/accuracy.md):
   analysis; COOL is the accelerated Arm execution path for the core proposal
   pass. `bench/environment.py` refuses to let a run be mislabelled, and both
   version strings go into every result file.
+* **Rectification is solved on real roads; detection is not.** On 60 frames of
+  real phone video of an Indian concrete street, the road plane was recovered
+  on **100%** of frames (the lane-marking route managed 2.3% on RDD2022), and
+  **77% of candidates were refused with a stated reason** rather than sized.
+  But the proposal stage outlines tree shadows, which is the same weakness
+  RDD2022 measured from the other direction. See
+  [real-world.md](docs/real-world.md).
+* **No area has ever been measured from real footage.** The one real clip is
+  hand-held and uncalibrated, so no area from it means anything and none is
+  claimed. This remains the project's largest evidence gap, and closing it
+  needs a mount and a tape measure, not more code.
 * **All *accuracy* figures are from synthetic imagery.** The renderer is
   physically constructed — a real pinhole camera over a persistent ground
   plane, shading applied before sensor noise, penumbra on cast shadows — and its

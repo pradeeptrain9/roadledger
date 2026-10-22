@@ -227,3 +227,101 @@ claims about different things.
 
 Nothing in this document should be read as a claim that this system is ready to
 direct real road spending.
+
+
+---
+
+# Real phone footage: a 69-second clip of an Indian street
+
+RDD2022 is stills. This is the first real *video* the pipeline has seen:
+848x478, 28 fps, 69 s, a concrete residential street with parked vehicles,
+an autorickshaw, a manhole cover, surface cracking and heavy dappled tree
+shadow. Captured 2026-10-22 on a phone.
+
+**No area is reported from it, and none can be.** Two independent reasons, both
+fatal to metric scale and neither fixable in post:
+
+1. **The camera was hand-held.** Every area depends on a camera whose height
+   and pitch are constant. Hand-held, both change from frame to frame, so no
+   calibration can be valid for more than an instant.
+2. **It is uncalibrated.** No measured lens height, no markers at known
+   distances. Area scales as the square of height, so a guessed height is a
+   guessed area.
+
+The clip was still worth running, because the half of the system that does not
+depend on calibration is exactly the half that failed on RDD2022.
+
+## What it establishes
+
+| | |
+|---|---|
+| Frames sampled | 60 of 60 usable (sharpness gate) |
+| **Rectification applicability** | **100%**, quality 0.80, calibrated route |
+| Candidates proposed | 368, **6.1 per frame** |
+| Measurable | **84 (23%)** |
+| Median source footprint | 496 px |
+
+**Rectification is solved on real roads.** The lane-marking route managed 2.3%
+on RDD2022 and took the whole measurement chain down with it. The calibrated
+route recovers the road plane on **every frame** of real footage, on a concrete
+street with no lane markings at all. That failure is closed.
+
+**Three quarters of candidates are refused, every one for a stated reason:**
+
+| count | reason |
+|---|---|
+| 193 | too distant: source footprint under the 300 px measurable floor |
+| 52 | refinement did not retain the candidate |
+| 39 | clipped: boundary cut off by the edge of the rectified view |
+
+This is the result, not a disappointment attached to it. A measurement system
+that sizes everything it sees is not trustworthy; one that declines 77% of the
+time with a reason per refusal is. The clipping guard in particular was added
+only a week earlier, after the live path exposed a view-edge truncation
+reporting a 0.363 m2 defect as 0.087 m2 - and on real footage it fires 39 times
+in 60 frames.
+
+## What it exposes
+
+**The proposal stage outlines tree shadows.** Visible directly in
+`data/artifacts/real_frame_015.png`: the largest contour in the frame is
+dappled shade, not damage. This is the same weakness RDD2022 measured - the
+classifier called 35 of 45 real potholes "shadow" - seen from the other
+direction. The proposal pass is a brightness-and-geometry filter and shade on
+concrete satisfies it. Nothing downstream rescues a candidate that was never a
+defect; it is the detector backend in `pipeline/proposers.py` that has to.
+
+**The plate scrubber fires far too often.** 463 "plates" across 60 frames,
+about eight per frame, on a street with perhaps three vehicles in it. Dappled
+shadow on concrete produces bright high-contrast horizontal rectangles, which
+is precisely what the heuristic looks for.
+
+It was then checked rather than assumed, because an over-firing privacy filter
+once destroyed this pipeline's own input (negative-results.md #12, rectification
+quality 0.94 to 0.00). Same 30 frames, scrubber on and off:
+
+| | plates blurred | candidates | measurable |
+|---|---|---|---|
+| privacy ON | 214 | 158 | 31 (20%) |
+| privacy OFF | 0 | 164 | 30 (18%) |
+
+A 4% difference in candidates and one measurement. **The over-firing is
+cosmetic, not corrupting** - the `plate_max_area_frac` and
+`plate_max_width_frac` bounds added after that earlier failure are holding each
+false positive small enough not to matter. Over-inclusive is the right
+direction for a privacy filter; it is bounded over-inclusion that makes it
+safe.
+
+## What would make this clip measure
+
+Nothing in software. A mount, a tape measure, and two markers:
+
+1. Clamp the phone so it cannot move, and leave it clamped.
+2. Measure the lens height above the road with a tape.
+3. Place objects at 3.00 m and 6.00 m ahead, film ten seconds, remove them.
+4. `python -m scripts.calibrate --video calibration.mp4 --grid`
+5. `python -m eval.real_video --video drive.mp4 --camera-height H --vfov V --pitch P`
+
+Supplying all three promotes every area in the output from arithmetic to
+measurement. Until then `eval/real_video.py` prints them under an explicit
+warning and the report claims nothing from them.
