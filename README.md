@@ -203,6 +203,16 @@ Stated plainly, and in more detail in [docs/accuracy.md](docs/accuracy.md):
   ([negative-results.md](docs/negative-results.md) §7). No further synthetic
   tuning is planned: real footage with hand-measured areas is the instrument
   that can settle whether this is the algorithm or the rig.
+* **COOL is slower than the free pip wheel on this workload.** Measured
+  2026-10-22 on one `m7g.xlarge`, three arms in one process style, one
+  variable: COOL against `opencv-python-headless==5.0.0.93` is **0.98x on the
+  core pass and 0.83x end to end**. Against COOL's own advertised baseline -
+  stock 4.12.0, no KleidiCV - the core pass gains **2%**, where the listing
+  advertises 20-70%. The cause is not mysterious: OpenCV 5 is 1.19x faster
+  than 4.12.0 here, COOL is built on 4.12.0, and COOL ships KleidiCV 0.5.0
+  where the wheel ships 26.03. One workload, one instance type; see
+  [cool-benchmark.md](docs/cool-benchmark.md) for what it does and does not
+  say.
 * **COOL is OpenCV 4.12.0, so OpenCV 5 is never claimed for it.** Verified on
   the Graviton3 AMI on 2026-10-21: COOL provides `cv2` 4.12.0 with KleidiCV
   0.5.0, while the pinned `opencv-python-headless==5.0.0.93` arm64 wheel

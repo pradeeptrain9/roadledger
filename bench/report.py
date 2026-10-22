@@ -75,7 +75,14 @@ class Arm:
     @property
     def problems(self) -> list[str]:
         """Ways this arm's environment contradicts what its label claims."""
-        out: list[str] = list(self.env.get("notes") or [])
+        # environment.py warns whenever /opt/cool exists and was not imported.
+        # On arms B and C that is the whole point of the arm, so the warning is
+        # only a problem for D.
+        notes = list(self.env.get("notes") or [])
+        out: list[str] = [
+            n for n in notes
+            if not (self.key in "ABC" and "NOT using COOL" in n)
+        ]
         cool = self.env.get("is_cool_build")
         version = str(self.env.get("cv2_version", ""))
         arch = self.env.get("architecture", "")
@@ -121,7 +128,8 @@ def _fmt(value: float | None, places: int = 3) -> str:
 
 def environments(arms: list[Arm]) -> None:
     print("\nENVIRONMENTS — what actually ran\n")
-    header = f"{'arm':<26} {'cv2':<9} {'KleidiCV':<9} {'arch':<8} {'instance':<13} {'threads':>7}"
+    header = (f"{'arm':<26} {'cv2':<9} {'numpy':<8} {'KleidiCV':<9} {'arch':<8} "
+              f"{'instance':<13} {'threads':>7}")
     print(header)
     print("-" * len(header))
     for arm in arms:
@@ -130,11 +138,22 @@ def environments(arms: list[Arm]) -> None:
         if env.get("is_cool_build"):
             kleidi += "/COOL"
         print(
-            f"{arm.label[:25]:<26} {str(env.get('cv2_version','?')):<9} {kleidi:<9} "
+            f"{arm.label[:25]:<26} {str(env.get('cv2_version','?')):<9} "
+            f"{str(env.get('numpy_version','?')):<8} {kleidi:<9} "
             f"{str(env.get('architecture','?')):<8} "
             f"{str(env.get('instance_type') or 'local'):<13} "
             f"{env.get('cv2_threads','?'):>7}"
         )
+    numpies = {str(a.env.get("numpy_version")) for a in arms if a.env.get("numpy_version")}
+    if len(numpies) > 1:
+        print(
+            f"\n  NOTE: the arms do not share a numpy ({', '.join(sorted(numpies))}). "
+            "COOL's cv2 is built against NumPy 1.x and fails to import under 2.x, so this "
+            "cannot be equalised - it is a property of COOL, not a flaw in the comparison. "
+            "The timed operations are OpenCV calls on preallocated arrays, so numpy is not "
+            "in the measured path, but it is reported because it could not be held constant."
+        )
+
     flagged = [(a, a.problems) for a in arms if a.problems]
     if flagged:
         print("\n  FLAGS — an arm whose environment contradicts its label is not comparable:")

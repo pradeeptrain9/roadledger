@@ -311,7 +311,11 @@ Resources:
             # Deliberately NOT pip installing opencv here: the COOL environment
             # provides it, and installing the wheel would shadow the build this
             # instance exists to exercise.
-            python3 -m pip install --quiet numpy==2.2.6 boto3==1.35.76 || true
+            # boto3 only. NOT numpy: COOL's cv2 is compiled against NumPy 1.x
+            # and installing our pinned 2.2.6 over it breaks the import with
+            # "numpy.core.multiarray failed to import", which is how the first
+            # benchmark run died. COOL keeps whatever numpy it shipped with.
+            python3 -m pip install --quiet boto3==1.35.76 || true
 
             python3 -m pip install --quiet \
               fastapi==0.115.6 uvicorn==0.34.0 pydantic==2.10.4 || true

@@ -70,10 +70,16 @@ trap cleanup EXIT
 # everything that needs bash is wrapped by the caller.
 remote() {
   local script="$1" timeout="${2:-3600}"
-  local cid
+  local cid b64
+  # The script is base64'd into a single-line command. Passing a multi-line
+  # script through the CLI's --parameters shorthand mangles it: the first
+  # attempt died with `Syntax error: word unexpected (expecting "do")` because
+  # a for-loop's newlines did not survive the quoting. One line, no quotes, no
+  # newlines, nothing left to escape.
+  b64="$(printf '%s' "$script" | base64 | tr -d '\n')"
   cid="$(aws ssm send-command --region "$REGION" --instance-ids "$INSTANCE" \
     --document-name AWS-RunShellScript \
-    --parameters "commands=[$(python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<<"$script")]" \
+    --parameters "commands=[\"echo $b64 | base64 -d | bash\"]" \
     --timeout-seconds 600 \
     --query 'Command.CommandId' --output text)"
   local status="InProgress" waited=0
@@ -134,19 +140,19 @@ tail -5 /var/log/cloud-init-output.log' 900
 # neither can see COOL's cv2 and COOL cannot see theirs. Arm D uses the venv
 # the AMI ships.
 echo "==> building the pip environments for arms B and C"
-remote 'bash -lc "
+remote '
 set -e
 apt-get update -qq && apt-get install -y -qq python3-venv >/dev/null 2>&1 || true
 for spec in cv5:5.0.0.93 cv4:4.12.0.88; do
-  name=\${spec%%:*}; ver=\${spec##*:}
-  if [ ! -d /opt/arm-\$name ]; then
-    python3 -m venv /opt/arm-\$name
-    /opt/arm-\$name/bin/pip install -q --upgrade pip
-    /opt/arm-\$name/bin/pip install -q opencv-python-headless==\$ver numpy==2.2.6
+  name=${spec%%:*}; ver=${spec##*:}
+  if [ ! -d /opt/arm-$name ]; then
+    python3 -m venv /opt/arm-$name
+    /opt/arm-$name/bin/pip install -q --upgrade pip
+    /opt/arm-$name/bin/pip install -q opencv-python-headless==$ver numpy==2.2.6
   fi
-  echo -n \"\$name: \"; /opt/arm-\$name/bin/python -c \"import cv2; print(cv2.__version__)\"
+  echo -n "$name: "; /opt/arm-$name/bin/python -c "import cv2; print(cv2.__version__)"
 done
-"' 1800
+' 1800
 
 # ----------------------------------------------------------------- the arms
 
@@ -154,15 +160,12 @@ run_arm() {
   local label="$1" python="$2" file="$3" extra="${4:-}"
   echo
   echo "==> arm: $label"
-  remote "bash -lc '
-    set -e
-    cd /opt/roadledger
-    $extra
-    $python -m bench.run_benchmark --repeats $REPEATS --frames $FRAMES \
-      --label \"$label\" --out /tmp/$file
-    echo \"---RESULT-JSON---\"
-    cat /tmp/$file
-  '" 2400 | tee "/tmp/$file.raw"
+  remote "set -e
+cd /opt/roadledger
+$extra
+$python -m bench.run_benchmark --repeats $REPEATS --frames $FRAMES --label '$label' --out /tmp/$file
+echo '---RESULT-JSON---'
+cat /tmp/$file" 2400 | tee "/tmp/$file.raw"
   # Everything after the marker is the result document.
   awk '/---RESULT-JSON---/{flag=1;next} flag' "/tmp/$file.raw" > "$RESULTS/$file"
   if python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$RESULTS/$file" 2>/dev/null; then

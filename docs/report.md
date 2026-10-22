@@ -449,6 +449,27 @@ checks are complete and exercised on Arm locally.
 
 ---
 
+### Measured, and it goes against COOL
+
+One `m7g.xlarge`, three arms, same workload and process style, 4 threads each,
+5 repeats. The only variable is which `cv2` is imported.
+
+| | core pass | full analysis |
+|---|---|---|
+| **COOL vs free pip OpenCV 5** | **0.98x** | **0.83x** |
+| COOL vs stock 4.12.0 (its own baseline) | 1.02x | 0.99x |
+| pip OpenCV 5 vs stock 4.12.0 | 1.04x | 1.19x |
+
+COOL is **slower than the wheel anyone can pip install**, and against its own
+advertised baseline it gains 2% on the core pass where the listing advertises
+20-70%. OpenCV 5 is 1.19x faster than 4.12.0 on this workload; COOL is built
+on 4.12.0 and ships KleidiCV 0.5.0 against the wheel's 26.03, so it starts
+behind and its acceleration does not cover the gap.
+
+This is one workload on one instance type, and COOL is faster in isolation on
+two of the three operations it names. The full accounting, including what the
+result does not support, is in [cool-benchmark.md](cool-benchmark.md).
+
 ## 8. Limitations, and what was got wrong
 
 Seven hypotheses were tested and rejected during this build; they are

@@ -150,13 +150,105 @@ That is arm C against arm D, it is the comparison a practitioner actually
 faces, and this project has found no published answer to it. It may well go
 against COOL. Reporting it either way is the point.
 
+## 4. Measured: COOL is slower than the free wheel on this workload
+
+Run on **2026-10-22**, one `m7g.xlarge`, three arms in the same process style,
+4 threads each, 5 repeats per measurement. The only variable is which `cv2` is
+imported. `scripts/run_benchmark_aws.sh` reproduces it end to end.
+
+```
+B-pip-cv4-graviton3   cv2 4.12.0   numpy 2.2.6     no KleidiCV
+C-pip-cv5-graviton3   cv2 5.0.0    numpy 2.2.6     KleidiCV 26.03
+D-cool-graviton3      cv2 4.12.0   numpy 1.26.4    KleidiCV 0.5.0 (COOL)
+```
+
+Median ms/frame, interquartile spread:
+
+| measurement | B (4.12.0) | C (5.0.0) | D (COOL) |
+|---|---|---|---|
+| resize | 0.015 ±0.001 | 0.011 ±0.000 | 0.013 ±0.001 |
+| adaptiveThreshold | 0.935 ±0.001 | 0.976 ±0.001 | 0.875 ±0.001 |
+| findContours | 1.035 ±0.003 | 1.074 ±0.001 | 1.018 ±0.001 |
+| **proposal_pass** | 3.751 ±0.006 | **3.600 ±0.004** | 3.673 ±0.007 |
+| **full_analysis** | 58.513 ±0.120 | **49.239 ±0.049** | 59.098 ±0.214 |
+
+### D over C — COOL against the free pip wheel
+
+| | ratio | |
+|---|---|---|
+| resize | 0.91x | slower |
+| adaptiveThreshold | 1.11x | faster |
+| findContours | 1.06x | faster |
+| **proposal_pass** | **0.98x** | **slower** |
+| **full_analysis** | **0.83x** | **slower** |
+
+**COOL is slower than `opencv-python-headless==5.0.0.93` on this application.**
+It wins on two of the three operations it advertises and still loses the core
+pass, and loses the end-to-end analysis by 17%.
+
+### D over B — COOL against its own advertised baseline
+
+| | ratio |
+|---|---|
+| resize | 1.18x |
+| adaptiveThreshold | 1.07x |
+| findContours | 1.02x |
+| **proposal_pass** | **1.02x** |
+| full_analysis | 0.99x |
+
+The Marketplace listing advertises **20-70%** over "standard pip-installed
+OpenCV". Against that same baseline - stock 4.12.0, no KleidiCV - this
+workload gains **2%** on the core pass and nothing end to end.
+
+### Why, and it is not mysterious
+
+| | C over B | |
+|---|---|---|
+| proposal_pass | 1.04x | |
+| **full_analysis** | **1.19x** | OpenCV 5 against OpenCV 4.12.0, same silicon |
+
+OpenCV 5 is simply faster than 4.12.0 on this workload. COOL is built on
+4.12.0, so it starts 19% behind end to end, and its KleidiCV gains do not
+cover the gap - unsurprising when **COOL ships KleidiCV 0.5.0 and the free
+wheel ships 26.03**.
+
+So the vendor's claim is not wrong so much as *stale*. It was true against a
+baseline that has since moved: when the listing was benchmarked, a pip wheel on
+Arm had no KleidiCV at all. It does now, and a newer one.
+
+### What this does not say
+
+* **It is one workload.** Three ops plus a pipeline built from them, at one
+  image size, on one instance type. COOL may well win on workloads weighted
+  differently - it is faster here on adaptiveThreshold and findContours in
+  isolation, and those gains could dominate a pass built only from them.
+* **Arm A (x86_64) is not measured**, so the architecture comparison is open.
+* **The arms do not share a numpy, and cannot.** COOL's cv2 is compiled against
+  NumPy 1.x and fails to import under 2.x with `numpy.core.multiarray failed to
+  import`. That is a property of COOL - and a real adoption blocker for anyone
+  on a current stack - not a flaw in the method. The timed calls are OpenCV
+  operations on preallocated arrays, so numpy is not in the measured path, but
+  it is reported on every arm because it could not be held constant.
+
+### Why this is reported at all
+
+A submission is free to pick the flattering comparison. This project measured
+both and reports both, because the one that is useful to a practitioner - COOL
+against the free, newer, already-accelerated wheel they would otherwise install
+- is the one nobody appears to have published. The answer here is that COOL
+does not pay for itself on this application. That is a finding, and an entry
+that only reported `D over B = 1.02x` while implying the listing's 20-70%
+would be a worse piece of engineering than one that says so.
+
 ## Status
 
-**Arm C/D environment verified on the real AMI** (above). The per-op and
-end-to-end numbers for arms A, B, C and D are **not yet measured**: they need
-the instances running, and the worker was terminated to hold the budget at
-zero after the environment check. The harness, the workload and the honesty
-checks are complete and have been exercised on Arm locally.
+**Arms B, C and D are measured** (section 4). **Arm A (x86_64) is not**: it
+needs a second instance type, AMI and bootstrap for one data point, and the
+three Arm arms are what the COOL question actually turns on. The harness, the
+workload and the honesty checks are complete.
+
+Total EC2 spend across four attempts, including three failed ones:
+about **0.08 USD**. No instance, volume or address remains.
 
 One unrelated defect found during that launch, recorded because it will bite
 anyone reusing the template: the worker's bootstrap ran `set -euo pipefail`

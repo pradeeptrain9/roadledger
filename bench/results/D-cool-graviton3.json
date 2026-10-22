@@ -1,0 +1,125 @@
+{
+  "label": "D-cool-graviton3",
+  "environment": {
+    "hostname": "ip-172-31-39-30",
+    "architecture": "aarch64",
+    "platform": "Linux-6.17.0-1019-aws-aarch64-with-glibc2.39",
+    "python_version": "3.12.3",
+    "cv2_version": "4.12.0",
+    "cv2_path": "/opt/cool/python_3.12/site-packages/cv2/python-3.12/cv2.cpython-312-aarch64-linux-gnu.so",
+    "numpy_version": "1.26.4",
+    "cpu_count": 4,
+    "cv2_threads": 4,
+    "is_cool_build": true,
+    "cool_prefix_present": true,
+    "kleidicv_in_build": true,
+    "cpu_features": "Baseline:                    NEON FP16 NEON_DOTPROD NEON_FP16 NEON_BF16 | requested:                 DETECT | requested:                 NEON_FP16 NEON_BF16 NEON_DOTPROD",
+    "instance_type": "m7g.xlarge",
+    "instance_region": "us-east-1",
+    "instance_id": "i-076b32cf68cb10c16",
+    "notes": [
+      "COOL build reports OpenCV 4.12.0, not 5.x. The competition requires OpenCV 5 for the substantive analysis, so this must be reported as a split: COOL accelerates the core ops on Arm while OpenCV 5 performs the analysis. Do not claim OpenCV 5 for COOL."
+    ]
+  },
+  "cool_version": "ami:ami-0c0803594d6330678",
+  "workload": {
+    "frames": 12,
+    "bev_shape": [
+      640,
+      640,
+      3
+    ],
+    "repeats": 5,
+    "cv2_threads": 4
+  },
+  "stats": [
+    {
+      "name": "resize",
+      "unit": "ms/frame",
+      "median": 0.01263,
+      "minimum": 0.0122,
+      "maximum": 0.01311,
+      "iqr": 0.00053,
+      "n": 5,
+      "samples": [
+        0.0122,
+        0.01243,
+        0.01263,
+        0.01296,
+        0.01311
+      ]
+    },
+    {
+      "name": "adaptiveThreshold",
+      "unit": "ms/frame",
+      "median": 0.87527,
+      "minimum": 0.87316,
+      "maximum": 0.87597,
+      "iqr": 0.00092,
+      "n": 5,
+      "samples": [
+        0.87316,
+        0.87485,
+        0.87527,
+        0.87577,
+        0.87597
+      ]
+    },
+    {
+      "name": "findContours",
+      "unit": "ms/frame",
+      "median": 1.01788,
+      "minimum": 1.01158,
+      "maximum": 1.0226,
+      "iqr": 0.00128,
+      "n": 5,
+      "samples": [
+        1.01158,
+        1.01687,
+        1.01788,
+        1.01815,
+        1.0226
+      ]
+    },
+    {
+      "name": "proposal_pass",
+      "unit": "ms/frame",
+      "median": 3.67334,
+      "minimum": 3.66197,
+      "maximum": 3.67825,
+      "iqr": 0.00733,
+      "n": 5,
+      "samples": [
+        3.66197,
+        3.67025,
+        3.67334,
+        3.67758,
+        3.67825
+      ]
+    },
+    {
+      "name": "full_analysis",
+      "unit": "ms/frame",
+      "median": 59.09771,
+      "minimum": 58.84408,
+      "maximum": 59.2719,
+      "iqr": 0.21391,
+      "n": 3,
+      "samples": [
+        58.84408,
+        59.09771,
+        59.2719
+      ]
+    }
+  ],
+  "derived": {
+    "core_pass_ms_per_frame": 3.67334,
+    "throughput_frames_per_s": 272.23,
+    "instance_hourly_usd": 0.163,
+    "cool_software_hourly_usd": 0.01,
+    "usd_per_1000_frames": 0.000177,
+    "pricing_as_of": "2026-10-13",
+    "pricing_known": true
+  },
+  "recorded_at": "2026-10-22T07:10:11+0000"
+}

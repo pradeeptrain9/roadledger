@@ -1,0 +1,125 @@
+{
+  "label": "B-pip-cv4-graviton3",
+  "environment": {
+    "hostname": "ip-172-31-39-30",
+    "architecture": "aarch64",
+    "platform": "Linux-6.17.0-1019-aws-aarch64-with-glibc2.39",
+    "python_version": "3.12.3",
+    "cv2_version": "4.12.0",
+    "cv2_path": "/opt/arm-cv4/lib/python3.12/site-packages/cv2/__init__.py",
+    "numpy_version": "2.2.6",
+    "cpu_count": 4,
+    "cv2_threads": 4,
+    "is_cool_build": false,
+    "cool_prefix_present": true,
+    "kleidicv_in_build": false,
+    "cpu_features": "Baseline:                    NEON FP16 | requested:                 DETECT | requested:                 NEON_FP16 NEON_BF16 NEON_DOTPROD",
+    "instance_type": "m7g.xlarge",
+    "instance_region": "us-east-1",
+    "instance_id": "i-076b32cf68cb10c16",
+    "notes": [
+      "/opt/cool exists but the imported cv2 is /opt/arm-cv4/lib/python3.12/site-packages/cv2/__init__.py - this run is NOT using COOL. Activate /opt/cool/venvs/python_3.12 or set LD_LIBRARY_PATH and PYTHONPATH per the Marketplace AMI instructions."
+    ]
+  },
+  "cool_version": "ami:ami-0c0803594d6330678",
+  "workload": {
+    "frames": 12,
+    "bev_shape": [
+      640,
+      640,
+      3
+    ],
+    "repeats": 5,
+    "cv2_threads": 4
+  },
+  "stats": [
+    {
+      "name": "resize",
+      "unit": "ms/frame",
+      "median": 0.01486,
+      "minimum": 0.01471,
+      "maximum": 0.01662,
+      "iqr": 0.00066,
+      "n": 5,
+      "samples": [
+        0.01471,
+        0.01481,
+        0.01486,
+        0.01547,
+        0.01662
+      ]
+    },
+    {
+      "name": "adaptiveThreshold",
+      "unit": "ms/frame",
+      "median": 0.93453,
+      "minimum": 0.93405,
+      "maximum": 0.93793,
+      "iqr": 0.00119,
+      "n": 5,
+      "samples": [
+        0.93405,
+        0.93428,
+        0.93453,
+        0.93547,
+        0.93793
+      ]
+    },
+    {
+      "name": "findContours",
+      "unit": "ms/frame",
+      "median": 1.03475,
+      "minimum": 1.03389,
+      "maximum": 1.03705,
+      "iqr": 0.00296,
+      "n": 5,
+      "samples": [
+        1.03389,
+        1.03406,
+        1.03475,
+        1.03702,
+        1.03705
+      ]
+    },
+    {
+      "name": "proposal_pass",
+      "unit": "ms/frame",
+      "median": 3.75148,
+      "minimum": 3.73237,
+      "maximum": 3.77818,
+      "iqr": 0.00618,
+      "n": 5,
+      "samples": [
+        3.73237,
+        3.74574,
+        3.75148,
+        3.75193,
+        3.77818
+      ]
+    },
+    {
+      "name": "full_analysis",
+      "unit": "ms/frame",
+      "median": 58.51332,
+      "minimum": 58.49135,
+      "maximum": 58.73103,
+      "iqr": 0.11984,
+      "n": 3,
+      "samples": [
+        58.49135,
+        58.51332,
+        58.73103
+      ]
+    }
+  ],
+  "derived": {
+    "core_pass_ms_per_frame": 3.75148,
+    "throughput_frames_per_s": 266.56,
+    "instance_hourly_usd": 0.163,
+    "cool_software_hourly_usd": 0.0,
+    "usd_per_1000_frames": 0.00017,
+    "pricing_as_of": "2026-10-13",
+    "pricing_known": true
+  },
+  "recorded_at": "2026-10-22T07:10:50+0000"
+}
